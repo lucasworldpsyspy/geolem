@@ -1,0 +1,28 @@
+{$DOMINIO} {
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+		-Server
+	}
+
+	# Público: quem recebe o laudo confere pelo QR code, sem senha.
+	# Só leitura (GET) de um protocolo específico; criar análises continua protegido.
+	@verificacao {
+		method GET HEAD
+		path /verificar/* /api/analises/GL-*
+	}
+	handle @verificacao {
+		reverse_proxy api:8000
+	}
+
+	# Todo o resto (mapa, buscas, análises, documentação da API) pede usuário e senha.
+	handle {
+		basic_auth {
+			{$ACESSO_USUARIO} {$ACESSO_SENHA_HASH}
+		}
+		reverse_proxy api:8000
+	}
+}

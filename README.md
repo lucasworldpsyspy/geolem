@@ -13,6 +13,8 @@ o crédito rural e o ESG. Hoje essa checagem é manual, lenta e cara.
 ```
 geolem/
 ├── docker-compose.yml      PostGIS + API (a API também serve o frontend)
+├── docker-compose.prod.yml produção: Caddy com HTTPS automático e senha de acesso
+├── deploy/                 Caddyfile e scripts de instalação, envio, backup e troca de senha
 ├── .env.example            configurações (copie para .env)
 ├── db/init/01_schema.sql   tabelas, índices espaciais e função de normalização
 ├── api/
@@ -32,6 +34,7 @@ geolem/
 ├── web/index.html          frontend (MapLibre)
 ├── web/verificar.html      página pública de verificação de laudo (destino do QR code)
 ├── dados/                  arquivos baixados manualmente (CAR); fora do git
+├── vendas/                 apresentação: laudo de exemplo e roteiro de reunião
 └── prototipo/              protótipo da fase 1 com dados fictícios
 ```
 
@@ -113,6 +116,41 @@ docker compose exec api python -m pytest -q
 ### Atualizar bases
 Rode `python -m ingest todas` de novo. Cada fonte é substituída numa transação, então uma falha não apaga a carga anterior.
 Em produção, isso vira uma tarefa agendada semanal.
+
+## Colocar no ar (servidor)
+
+O sistema roda num servidor Linux com Docker. O Caddy emite o certificado HTTPS sozinho e pede usuário e senha
+para tudo, **menos a verificação de laudos** (`/verificar/...` e a leitura de um protocolo), que precisa ser pública
+para o QR code funcionar no celular de quem recebe o laudo. O banco e a API não ficam expostos à internet.
+
+**O que contratar:**
+- Um servidor (VPS) com **Ubuntu 24.04, 2 GB de RAM e 25 GB de disco**. Prefira um com datacenter em São Paulo.
+- Um **domínio** (por exemplo, no registro.br). Crie um registro **A** apontando o domínio, ou um subdomínio como
+  `laudos.seudominio.com.br`, para o IP do servidor.
+
+**Primeira instalação** (no seu computador, no Git Bash, dentro da pasta `geolem`):
+```bash
+bash deploy/enviar.sh root@IP_DO_SERVIDOR
+ssh root@IP_DO_SERVIDOR "bash /opt/geolem/deploy/instalar.sh laudos.seudominio.com.br"
+```
+O `instalar.sh` instala o Docker, liga o firewall (só SSH, HTTP e HTTPS), gera senhas fortes no `.env`, sobe o sistema,
+carrega as bases e agenda as tarefas. **Ele mostra a senha de acesso uma única vez: anote.**
+O usuário é `geolem`; para trocar a senha, rode `bash /opt/geolem/deploy/trocar-senha.sh` no servidor.
+
+**Atualizar** depois de mudar o código: faça o commit e rode de novo `bash deploy/enviar.sh root@IP_DO_SERVIDOR`.
+Só vai o que está no git; o `.env`, o banco e os backups do servidor não são tocados.
+
+**Tarefas agendadas** (`/etc/cron.d/geolem`): bases públicas atualizadas toda segunda às 3h
+(log em `/var/log/geolem-bases.log`) e backup do banco todo dia às 2h.
+
+### Backups
+Ficam em `/opt/geolem/backups`, com 14 dias guardados (cerca de 8 MB cada). Os laudos emitidos são o que não dá para
+refazer, então copie de vez em quando para fora do servidor:
+```bash
+scp "root@IP_DO_SERVIDOR:/opt/geolem/backups/*.sql.gz" .
+```
+Para restaurar num banco vazio:
+`gunzip -c ARQUIVO.sql.gz | docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T db psql -U geolem -d geolem`.
 
 ## API
 

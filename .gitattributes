@@ -1,0 +1,4 @@
+# Scripts e configuração rodam no servidor Linux: sempre com fim de linha LF
+*.sh text eol=lf
+deploy/Caddyfile text eol=lf
+*.yml text eol=lf

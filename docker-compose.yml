@@ -9,7 +9,7 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-geolem}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-geolem}
     ports:
-      - "${DB_PORTA:-5432}:5432"
+      - "127.0.0.1:${DB_PORTA:-5432}:5432"  # só no próprio computador, nunca exposto à rede
     volumes:
       - dados_db:/var/lib/postgresql/data
       - ./db/init:/docker-entrypoint-initdb.d:ro
@@ -32,7 +32,7 @@ services:
       WEB_DIR: /app/web
       URL_PUBLICA: ${URL_PUBLICA:-http://localhost:8000}
     ports:
-      - "${API_PORTA:-8000}:8000"
+      - "127.0.0.1:${API_PORTA:-8000}:8000"  # em produção, o acesso externo passa pelo Caddy (HTTPS)
     volumes:
       - ./web:/app/web:ro
       - ./dados:/app/dados
