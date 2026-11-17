@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Verificação de laudo · GeoLEM</title>
+  <style>
+    :root {
+      --fundo: #f3f6f4; --cartao: #fff; --texto: #17201b; --suave: #5b6660; --borda: #dbe3de; --verde: #1d7a52;
+      --ok: #17663f; --ok-bg: #dff3e8; --info: #2f5f8a; --info-bg: #e2edf7;
+      --warn: #8a5a00; --warn-bg: #fdf0d5; --bad: #a3262b; --bad-bg: #fbdcdd;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--fundo); color: var(--texto); font: 15px/1.5 system-ui, "Segoe UI", Roboto, sans-serif; }
+    main { max-width: 640px; margin: 0 auto; padding: 20px 16px 40px; }
+    .marca { font-weight: 700; color: var(--verde); letter-spacing: .02em; }
+    h1 { font-size: 20px; margin: 4px 0 16px; }
+    .cartao { background: var(--cartao); border: 1px solid var(--borda); border-radius: 12px; padding: 16px; margin-bottom: 14px; }
+    .autentico { display: flex; gap: 12px; align-items: center; }
+    .icone { flex: none; width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center;
+             color: #fff; font-size: 22px; font-weight: 700; }
+    .autentico.sim .icone { background: var(--ok); }
+    .autentico.nao .icone { background: var(--bad); }
+    .autentico strong { display: block; font-size: 17px; }
+    .autentico small { color: var(--suave); }
+    dl { display: grid; grid-template-columns: max-content 1fr; gap: 6px 14px; margin: 0; }
+    dt { color: var(--suave); }
+    dd { margin: 0; overflow-wrap: anywhere; }
+    .geral { border-radius: 10px; padding: 12px 14px; margin-bottom: 14px; border: 1px solid; }
+    .geral b { font-size: 18px; display: block; }
+    .s-ok { color: var(--ok); background: var(--ok-bg); } .s-info { color: var(--info); background: var(--info-bg); }
+    .s-warn { color: var(--warn); background: var(--warn-bg); } .s-bad { color: var(--bad); background: var(--bad-bg); }
+    ul { list-style: none; padding: 0; margin: 0; }
+    li { display: flex; justify-content: space-between; gap: 10px; padding: 8px 0; border-top: 1px solid var(--borda); }
+    li:first-child { border-top: 0; }
+    .selo { flex: none; font-size: 12px; font-weight: 700; border-radius: 99px; padding: 2px 9px; height: fit-content; }
+    .hash { font: 12px/1.4 ui-monospace, Consolas, monospace; overflow-wrap: anywhere; color: var(--suave); }
+    .botao { display: block; text-align: center; background: var(--verde); color: #fff; text-decoration: none;
+             font-weight: 600; padding: 12px; border-radius: 10px; }
+    .rodape { color: var(--suave); font-size: 12.5px; margin-top: 18px; }
+    h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--suave); margin: 0 0 8px; }
+  </style>
+</head>
+<body>
+<main>
+  <div class="marca">GeoLEM</div>
+  <h1>Verificação de laudo</h1>
+  <div id="conteudo"><div class="cartao">Consultando…</div></div>
+  <p class="rodape">Esta página confere, na base do GeoLEM, os dados de um laudo emitido. Compare o protocolo, o resultado
+    e o código de integridade com os do documento que você recebeu.</p>
+</main>
+<script>
+  const ROTULO = { ok: 'Conforme', info: 'Informativo', warn: 'Atenção', bad: 'Não conforme' };
+  const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const fmtHa = (v) => `${Number(v).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} ha`;
+  const protocolo = decodeURIComponent(location.pathname.split('/').filter(Boolean).pop() || '');
+  const alvo = document.getElementById('conteudo');
+
+  function falha(titulo, texto) {
+    alvo.innerHTML = `<div class="cartao autentico nao"><div class="icone">!</div><div><strong>${esc(titulo)}</strong>` +
+      `<small>${esc(texto)}</small></div></div>`;
+  }
+
+  fetch(`/api/analises/${encodeURIComponent(protocolo)}`)
+    .then((r) => {
+      if (r.status === 404) throw new Error('404');
+      if (!r.ok) throw new Error('erro');
+      return r.json();
+    })
+    .then((r) => {
+      const a = r.area, im = a.imovel || {};
+      const ok = r.integridade_conferida;
+      const mun = im.municipio ? (im.uf ? `${im.municipio}/${im.uf}` : im.municipio) : null;
+      const linhas = [
+        ['Protocolo', r.protocolo],
+        ['Emitido em', new Date(r.criado_em).toLocaleString('pt-BR', { timeZone: 'America/Bahia' })],
+        ['Área', a.nome], im.codigo ? ['Código', im.codigo] : null, mun ? ['Município', mun] : null,
+        ['Tamanho', fmtHa(a.area_ha)],
+      ].filter(Boolean);
+      alvo.innerHTML =
+        `<div class="cartao autentico ${ok ? 'sim' : 'nao'}"><div class="icone">${ok ? '✓' : '!'}</div><div>` +
+        (ok ? '<strong>Laudo autêntico</strong><small>Emitido pelo GeoLEM e sem alterações desde a emissão.</small>'
+            : '<strong>Conteúdo divergente</strong><small>Os dados gravados não batem com o código de integridade. Não aceite este laudo.</small>') +
+        `</div></div>` +
+        `<div class="cartao"><dl>${linhas.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl></div>` +
+        `<div class="geral s-${r.geral}"><b>${esc(r.rotulo_geral)}</b>${esc(r.resumo)}</div>` +
+        `<div class="cartao"><h2>Verificações</h2><ul>${r.checks.map((c) =>
+          `<li><span>${esc(c.titulo)}${c.ha && c.status !== 'ok' ? ` · ${fmtHa(c.ha)}` : ''}</span>` +
+          `<span class="selo s-${c.status}">${ROTULO[c.status] || esc(c.status)}</span></li>`).join('')}</ul></div>` +
+        `<div class="cartao"><h2>Código de integridade (SHA-256)</h2><div class="hash">${esc(r.integridade)}</div></div>` +
+        `<a class="botao" href="/api/analises/${encodeURIComponent(r.protocolo)}/laudo.pdf">Abrir o laudo em PDF</a>`;
+    })
+    .catch((e) => e.message === '404'
+      ? falha('Protocolo não encontrado', `Nenhum laudo com o protocolo "${protocolo}" foi emitido pelo GeoLEM.`)
+      : falha('Não foi possível consultar', 'Tente de novo em instantes.'));
+</script>
+</body>
+</html>

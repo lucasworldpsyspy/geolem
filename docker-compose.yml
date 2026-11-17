@@ -1,0 +1,41 @@
+name: geolem
+
+services:
+  db:
+    image: postgis/postgis:16-3.4
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-geolem}
+      POSTGRES_USER: ${POSTGRES_USER:-geolem}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-geolem}
+    ports:
+      - "${DB_PORTA:-5432}:5432"
+    volumes:
+      - dados_db:/var/lib/postgresql/data
+      - ./db/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  api:
+    build: ./api
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-geolem}:${POSTGRES_PASSWORD:-geolem}@db:5432/${POSTGRES_DB:-geolem}
+      REGIAO_BBOX: ${REGIAO_BBOX:--46.7,-12.9,-45.0,-11.3}
+      AREA_MINIMA_HA: ${AREA_MINIMA_HA:-0.1}
+      WEB_DIR: /app/web
+      URL_PUBLICA: ${URL_PUBLICA:-http://localhost:8000}
+    ports:
+      - "${API_PORTA:-8000}:8000"
+    volumes:
+      - ./web:/app/web:ro
+      - ./dados:/app/dados
+
+volumes:
+  dados_db:

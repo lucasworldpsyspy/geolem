@@ -1,0 +1,767 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>GeoLEM · Compliance de Áreas</title>
+  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
+  <style>
+:root {
+  --bg: #0e1411;
+  --painel: #141c18;
+  --painel-2: #1b2520;
+  --borda: #2a3830;
+  --texto: #e7eee9;
+  --suave: #97a89d;
+  --marca: #4cc38a;
+  --marca-tinta: #062a1b;
+  --ok: #3fb87f;
+  --warn: #f5a524;
+  --bad: #e5484d;
+  --info: #5aa9e6;
+  --raio: 10px;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--texto);
+  font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+.app { display: flex; height: 100vh; }
+
+.painel {
+  width: 390px;
+  flex: none;
+  overflow-y: auto;
+  background: var(--painel);
+  border-right: 1px solid var(--borda);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+#mapa { flex: 1; min-width: 0; }
+
+/* Cabeçalho */
+.topo { display: flex; align-items: center; gap: 10px; }
+.logo {
+  width: 38px; height: 38px; border-radius: 9px;
+  display: grid; place-items: center;
+  background: var(--marca); color: var(--marca-tinta);
+  font-size: 22px; font-weight: 700;
+}
+.topo h1 { margin: 0; font-size: 19px; letter-spacing: .3px; }
+.sub { margin: 0; color: var(--suave); font-size: 12.5px; }
+.tag {
+  margin-left: auto; font-size: 11px; text-transform: uppercase; letter-spacing: .6px;
+  border: 1px solid var(--borda); color: var(--suave); padding: 2px 8px; border-radius: 99px;
+}
+
+.aviso {
+  background: rgba(245, 165, 36, .1);
+  border: 1px solid rgba(245, 165, 36, .35);
+  color: #f6c86a;
+  padding: 8px 10px; border-radius: var(--raio); font-size: 12.5px;
+}
+
+.bloco {
+  background: var(--painel-2);
+  border: 1px solid var(--borda);
+  border-radius: var(--raio);
+  padding: 12px;
+  display: flex; flex-direction: column; gap: 10px;
+}
+.bloco h2 { margin: 0; font-size: 13px; text-transform: uppercase; letter-spacing: .7px; color: var(--suave); }
+
+.rotulo { font-size: 12px; color: var(--suave); }
+
+select, .btn {
+  font: inherit; color: var(--texto);
+  background: var(--painel); border: 1px solid var(--borda);
+  border-radius: 8px; padding: 8px 10px;
+}
+select { width: 100%; }
+.btn { cursor: pointer; }
+.btn:hover:not(:disabled) { border-color: var(--marca); }
+.btn:disabled { opacity: .45; cursor: not-allowed; }
+.btn-primario { background: var(--marca); border-color: var(--marca); color: var(--marca-tinta); font-weight: 600; }
+.btn-primario:hover:not(:disabled) { filter: brightness(1.08); }
+.btn-largo { width: 100%; }
+.linha-botoes { display: flex; gap: 8px; flex-wrap: wrap; }
+.linha-botoes .btn { flex: 1; }
+
+.barra-desenho {
+  border: 1px dashed #ffd400; border-radius: 8px; padding: 10px;
+}
+.barra-desenho p { margin: 0 0 8px; font-size: 12.5px; color: #ffe26b; }
+
+.info-area { display: grid; grid-template-columns: auto 1fr; gap: 4px 10px; font-size: 13px; }
+.info-area dt { color: var(--suave); }
+.info-area dd { margin: 0; word-break: break-word; }
+
+.erro { margin: 0; color: #ff8a8d; font-size: 12.5px; }
+
+/* Resultado */
+.geral {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 12px; border-radius: 8px; margin-bottom: 8px; font-weight: 600;
+}
+.geral small { display: block; font-weight: 400; color: var(--suave); }
+.geral.ok { background: rgba(63, 184, 127, .14); border: 1px solid var(--ok); }
+.geral.warn { background: rgba(245, 165, 36, .13); border: 1px solid var(--warn); }
+.geral.bad { background: rgba(229, 72, 77, .14); border: 1px solid var(--bad); }
+
+.check {
+  border-left: 3px solid var(--borda);
+  padding: 6px 0 6px 10px; margin-bottom: 6px;
+}
+.check.ok { border-color: var(--ok); }
+.check.info { border-color: var(--info); }
+.check.warn { border-color: var(--warn); }
+.check.bad { border-color: var(--bad); }
+.check-topo { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+.check-titulo { font-weight: 600; }
+.check-base { color: var(--suave); font-size: 12px; }
+.check ul { margin: 4px 0 0; padding-left: 16px; font-size: 12.5px; }
+
+.selo {
+  font-size: 11px; font-weight: 700; white-space: nowrap;
+  padding: 1px 8px; border-radius: 99px;
+}
+.selo.ok { background: var(--ok); color: #04210f; }
+.selo.info { background: var(--info); color: #04182a; }
+.selo.warn { background: var(--warn); color: #2a1a00; }
+.selo.bad { background: var(--bad); color: #fff; }
+
+/* Camadas */
+.lista-camadas { display: flex; flex-direction: column; gap: 6px; }
+.lista-camadas label { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+.amostra { width: 14px; height: 14px; border-radius: 3px; border: 2px solid; flex: none; }
+.base { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.segmentado { display: flex; border: 1px solid var(--borda); border-radius: 8px; overflow: hidden; }
+.segmentado label { padding: 5px 10px; cursor: pointer; font-size: 12.5px; }
+.segmentado input { display: none; }
+.segmentado label:has(input:checked) { background: var(--marca); color: var(--marca-tinta); font-weight: 600; }
+
+.rodape { color: var(--suave); font-size: 11.5px; text-align: center; margin-top: auto; }
+
+/* Popup */
+.maplibregl-popup-content { background: #fff; color: #1a1a1a; font: 13px/1.4 system-ui, sans-serif; border-radius: 8px; }
+.maplibregl-popup-content strong { display: block; margin-bottom: 2px; }
+.maplibregl-popup-content hr { border: 0; border-top: 1px solid #ddd; margin: 6px 0; }
+.pop-camada { font-size: 11px; text-transform: uppercase; letter-spacing: .5px; color: #667; }
+
+/* Celular */
+@media (max-width: 760px) {
+  .app { flex-direction: column-reverse; height: auto; }
+  #mapa { height: 55vh; flex: none; }
+  .painel { width: 100%; border-right: 0; border-top: 1px solid var(--borda); }
+}
+
+/* Laudo (só aparece na impressão) */
+#laudo { display: none; }
+
+@media print {
+  @page { size: A4; margin: 14mm; }
+  .app { display: none !important; }
+  html, body { background: #fff; color: #111; height: auto; }
+  #laudo { display: block; font: 11pt/1.45 system-ui, "Segoe UI", sans-serif; }
+  #laudo h1 { font-size: 18pt; margin: 0; }
+  #laudo .l-topo { display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 2px solid #1d7a52; padding-bottom: 6px; margin-bottom: 10px; }
+  #laudo .l-sub { color: #555; font-size: 9.5pt; }
+  #laudo table { width: 100%; border-collapse: collapse; margin: 8px 0; }
+  #laudo th, #laudo td { border: 1px solid #ccc; padding: 5px 7px; text-align: left; vertical-align: top; font-size: 10pt; }
+  #laudo th { background: #f1f4f2; }
+  #laudo img { width: 100%; border: 1px solid #ccc; margin: 6px 0; }
+  #laudo .l-geral { padding: 8px 10px; border-radius: 6px; font-weight: 700; margin: 8px 0; }
+  #laudo .l-geral.ok { background: #dff3e8; }
+  #laudo .l-geral.warn { background: #fdf0d5; }
+  #laudo .l-geral.bad { background: #fbdcdd; }
+  #laudo .l-aviso { margin-top: 12px; font-size: 9pt; color: #666; border-top: 1px solid #ccc; padding-top: 6px; }
+  .selo { border: 1px solid #999; }
+}
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="painel">
+      <header class="topo">
+        <div class="logo" aria-hidden="true">◈</div>
+        <div>
+          <h1>GeoLEM</h1>
+          <p class="sub">Compliance socioambiental de áreas rurais</p>
+        </div>
+        <span class="tag">protótipo</span>
+      </header>
+
+      <div class="aviso">Todos os dados exibidos são <strong>fictícios</strong>, apenas para demonstração.</div>
+
+      <section class="bloco">
+        <h2>1. Área a analisar</h2>
+        <label class="rotulo" for="sel-fazenda">Imóvel cadastrado (CAR)</label>
+        <select id="sel-fazenda">
+          <option value="">Selecione um imóvel…</option>
+        </select>
+        <div class="linha-botoes">
+          <button id="btn-desenhar" class="btn">✎ Desenhar no mapa</button>
+          <button id="btn-importar" class="btn">⇪ Importar GeoJSON</button>
+          <input id="arquivo" type="file" accept=".geojson,.json,application/geo+json,application/json" hidden>
+        </div>
+
+        <div id="barra-desenho" class="barra-desenho" hidden>
+          <p>Clique no mapa para marcar os vértices da área.</p>
+          <div class="linha-botoes">
+            <button id="btn-concluir" class="btn btn-primario">Concluir</button>
+            <button id="btn-desfazer" class="btn">Desfazer</button>
+            <button id="btn-cancelar" class="btn">Cancelar</button>
+          </div>
+        </div>
+
+        <div id="info-area" class="info-area" hidden></div>
+        <p id="erro" class="erro" hidden></p>
+      </section>
+
+      <section class="bloco">
+        <h2>2. Verificação</h2>
+        <button id="btn-analisar" class="btn btn-primario btn-largo" disabled>Analisar conformidade</button>
+        <div id="resultado" hidden></div>
+        <button id="btn-laudo" class="btn btn-largo" hidden>⎙ Gerar laudo (PDF)</button>
+      </section>
+
+      <section class="bloco">
+        <h2>Camadas</h2>
+        <div id="lista-camadas" class="lista-camadas"></div>
+        <div class="base">
+          <span class="rotulo">Mapa base</span>
+          <div class="segmentado" role="radiogroup">
+            <label><input type="radio" name="base" value="satelite" checked> Satélite</label>
+            <label><input type="radio" name="base" value="osm"> Mapa</label>
+          </div>
+        </div>
+      </section>
+
+      <footer class="rodape">GeoLEM · Luís Eduardo Magalhães, BA</footer>
+    </aside>
+
+    <main id="mapa" aria-label="Mapa"></main>
+  </div>
+
+  <section id="laudo"></section>
+
+  <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6.5.0/turf.min.js"></script>
+  <script>
+// GeoLEM: DADOS FICTÍCIOS DE DEMONSTRAÇÃO
+// Nenhuma geometria abaixo é um imóvel, embargo, UC ou terra indígena real.
+// As áreas são geradas a partir de deslocamentos em km do centro de LEM (BA).
+(function () {
+  'use strict';
+
+  const CENTRO = [-45.7866, -12.0956]; // Luís Eduardo Magalhães - BA (lon, lat)
+  const KM_LAT = 110.574;
+  const KM_LON = 111.32 * Math.cos((CENTRO[1] * Math.PI) / 180);
+
+  const pt = (x, y) => [CENTRO[0] + x / KM_LON, CENTRO[1] + y / KM_LAT];
+
+  function poligono(pontosKm, props) {
+    const anel = pontosKm.map(([x, y]) => pt(x, y));
+    anel.push(anel[0]);
+    return { type: 'Feature', properties: props, geometry: { type: 'Polygon', coordinates: [anel] } };
+  }
+
+  function ret(cx, cy, w, h, props) {
+    return poligono(
+      [[cx - w / 2, cy - h / 2], [cx + w / 2, cy - h / 2], [cx + w / 2, cy + h / 2], [cx - w / 2, cy + h / 2]],
+      props
+    );
+  }
+
+  const fc = (features) => ({ type: 'FeatureCollection', features });
+  const MUN = 'Luís Eduardo Magalhães - BA';
+
+  window.GEOLEM_DADOS = {
+    centro: CENTRO,
+
+    fazendas: fc([
+      poligono([[-21, 3.5], [-15, 3.5], [-15, 8.5], [-18, 9.2], [-21, 8.5]], {
+        id: 'faz-1', nome: 'Fazenda Boa Esperança (demo)', car: 'BA-DEMO-0001-0000-0000-0000-0001',
+        municipio: MUN, reserva_legal_ha: 700,
+      }),
+      ret(-12, -10, 5, 4, {
+        id: 'faz-2', nome: 'Fazenda Santa Clara (demo)', car: 'BA-DEMO-0002-0000-0000-0000-0002',
+        municipio: MUN, reserva_legal_ha: 300,
+      }),
+      poligono([[-31.5, -7], [-24.5, -7], [-24.5, -1], [-28, -0.2], [-31.5, -1]], {
+        id: 'faz-3', nome: 'Fazenda Chapadão Verde (demo)', car: 'BA-DEMO-0003-0000-0000-0000-0003',
+        municipio: MUN, reserva_legal_ha: 960,
+      }),
+      ret(8, -18, 4, 4, {
+        id: 'faz-4', nome: 'Fazenda Sol Nascente (demo)', car: 'BA-DEMO-0004-0000-0000-0000-0004',
+        municipio: MUN, reserva_legal_ha: 352,
+      }),
+    ]),
+
+    desmatamento: fc([
+      ret(-16.5, 7, 1.5, 1.2, { id: 'pd-1', ano: 2022, fonte: 'PRODES Cerrado (fictício)' }),
+      ret(-13.5, -9, 1.2, 1, { id: 'pd-2', ano: 2015, fonte: 'PRODES Cerrado (fictício)' }),
+      ret(-21, 8.5, 1, 1, { id: 'pd-3', ano: 2006, fonte: 'PRODES Cerrado (fictício)' }),
+      ret(-26, -3, 1.5, 1, { id: 'pd-4', ano: 2019, fonte: 'PRODES Cerrado (fictício)' }),
+      ret(-35, 10, 2, 2, { id: 'pd-5', ano: 2023, fonte: 'PRODES Cerrado (fictício)' }),
+      ret(2, 6, 1.8, 1.4, { id: 'pd-6', ano: 2021, fonte: 'PRODES Cerrado (fictício)' }),
+    ]),
+
+    embargos: fc([
+      ret(-30, -6, 2, 1.5, {
+        id: 'emb-1', numero: 'DEMO-0001/2021', orgao: 'IBAMA', data: '14/08/2021',
+        motivo: 'Supressão de vegetação sem autorização (fictício)',
+      }),
+      ret(4, 9, 2.5, 2, {
+        id: 'emb-2', numero: 'DEMO-0002/2023', orgao: 'IBAMA', data: '02/03/2023',
+        motivo: 'Descumprimento de embargo anterior (fictício)',
+      }),
+    ]),
+
+    ucs: fc([
+      poligono([[-40, -15], [-30, -15], [-29.5, -5], [-30, 5], [-40, 5]], {
+        id: 'uc-1', nome: 'APA Demonstrativa do Chapadão', grupo: 'Uso Sustentável', esfera: 'Estadual (fictícia)',
+      }),
+      ret(-46, -5, 6, 10, {
+        id: 'uc-2', nome: 'Parque Demonstrativo das Veredas', grupo: 'Proteção Integral', esfera: 'Federal (fictícia)',
+      }),
+    ]),
+
+    tis: fc([
+      ret(-50, -30, 8, 6, { id: 'ti-1', nome: 'Terra Indígena Demonstrativa', situacao: 'Homologada (fictícia)' }),
+    ]),
+  };
+})();
+  </script>
+  <script>
+(function () {
+  'use strict';
+
+  const D = window.GEOLEM_DADOS;
+  const $ = (s) => document.querySelector(s);
+  const esc = (s) =>
+    String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const fmtHa = (v) => v.toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + ' ha';
+  const fmtPct = (v) => (v * 100).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + '%';
+
+  const STATUS = {
+    ok: { rotulo: 'Conforme', ordem: 0 },
+    info: { rotulo: 'Informativo', ordem: 1 },
+    warn: { rotulo: 'Atenção', ordem: 2 },
+    bad: { rotulo: 'Não conforme', ordem: 3 },
+  };
+
+  const CAMADAS = [
+    { id: 'fazendas', nome: 'Imóveis rurais (CAR)', cor: '#4cc38a', opacidade: 0.06, dados: D.fazendas },
+    { id: 'desmatamento', nome: 'Desmatamento (PRODES)', cor: '#ff7a45', opacidade: 0.35, dados: D.desmatamento },
+    { id: 'embargos', nome: 'Embargos IBAMA', cor: '#e5484d', opacidade: 0.35, dados: D.embargos },
+    { id: 'ucs', nome: 'Unidades de Conservação', cor: '#3e9bff', opacidade: 0.15, dados: D.ucs },
+    { id: 'tis', nome: 'Terras Indígenas', cor: '#c084fc', opacidade: 0.2, dados: D.tis },
+  ];
+
+  const DESCREVER = {
+    fazendas: (p) => `<strong>${esc(p.nome)}</strong>CAR: ${esc(p.car)}<br>Reserva legal declarada: ${fmtHa(p.reserva_legal_ha)}`,
+    desmatamento: (p) => `<strong>Desmatamento ${esc(p.ano)}</strong>${esc(p.fonte)}`,
+    embargos: (p) => `<strong>Embargo ${esc(p.numero)}</strong>${esc(p.orgao)} · ${esc(p.data)}<br>${esc(p.motivo)}`,
+    ucs: (p) => `<strong>${esc(p.nome)}</strong>${esc(p.grupo)} · ${esc(p.esfera)}`,
+    tis: (p) => `<strong>${esc(p.nome)}</strong>${esc(p.situacao)}`,
+  };
+
+  const vazio = () => ({ type: 'FeatureCollection', features: [] });
+  const estado = { area: null, resultado: null, desenhando: false, pontos: [] };
+
+  // ---------- Mapa ----------
+  const map = new maplibregl.Map({
+    container: 'mapa',
+    center: D.centro,
+    zoom: 9.4,
+    preserveDrawingBuffer: true, // permite capturar a imagem do mapa para o laudo
+    style: {
+      version: 8,
+      sources: {
+        satelite: {
+          type: 'raster',
+          tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],
+          tileSize: 256, maxzoom: 19,
+          attribution: 'Imagens © Esri, Maxar, Earthstar Geographics',
+        },
+        osm: {
+          type: 'raster',
+          tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
+          tileSize: 256, maxzoom: 19,
+          attribution: '© colaboradores do OpenStreetMap',
+        },
+      },
+      layers: [
+        { id: 'base-satelite', type: 'raster', source: 'satelite' },
+        { id: 'base-osm', type: 'raster', source: 'osm', layout: { visibility: 'none' } },
+      ],
+    },
+  });
+  map.addControl(new maplibregl.NavigationControl(), 'top-right');
+  map.addControl(new maplibregl.ScaleControl({ unit: 'metric' }), 'bottom-right');
+
+  map.on('load', () => {
+    CAMADAS.forEach((c) => {
+      map.addSource(c.id, { type: 'geojson', data: c.dados });
+      map.addLayer({ id: c.id + '-fill', type: 'fill', source: c.id, paint: { 'fill-color': c.cor, 'fill-opacity': c.opacidade } });
+      map.addLayer({ id: c.id + '-line', type: 'line', source: c.id, paint: { 'line-color': c.cor, 'line-width': c.id === 'fazendas' ? 2 : 1.4 } });
+    });
+
+    map.addSource('area', { type: 'geojson', data: vazio() });
+    map.addLayer({ id: 'area-fill', type: 'fill', source: 'area', paint: { 'fill-color': '#ffd400', 'fill-opacity': 0.1 } });
+
+    map.addSource('conflitos', { type: 'geojson', data: vazio() });
+    map.addLayer({
+      id: 'conflitos-fill', type: 'fill', source: 'conflitos',
+      paint: {
+        'fill-color': ['match', ['get', 'status'], 'bad', '#e5484d', 'warn', '#f5a524', '#5aa9e6'],
+        'fill-opacity': 0.7,
+      },
+    });
+    map.addLayer({ id: 'conflitos-line', type: 'line', source: 'conflitos', paint: { 'line-color': '#ffffff', 'line-width': 1.2 } });
+    map.addLayer({ id: 'area-line', type: 'line', source: 'area', paint: { 'line-color': '#ffd400', 'line-width': 3 } });
+
+    map.addSource('desenho', { type: 'geojson', data: vazio() });
+    map.addLayer({
+      id: 'desenho-line', type: 'line', source: 'desenho', filter: ['==', ['geometry-type'], 'LineString'],
+      paint: { 'line-color': '#ffd400', 'line-width': 2, 'line-dasharray': [2, 2] },
+    });
+    map.addLayer({
+      id: 'desenho-pts', type: 'circle', source: 'desenho', filter: ['==', ['geometry-type'], 'Point'],
+      paint: { 'circle-radius': 5, 'circle-color': '#ffd400', 'circle-stroke-color': '#000', 'circle-stroke-width': 1 },
+    });
+
+    montarCamadasUI();
+  });
+
+  map.on('mousemove', 'fazendas-fill', () => { if (!estado.desenhando) map.getCanvas().style.cursor = 'pointer'; });
+  map.on('mouseleave', 'fazendas-fill', () => { if (!estado.desenhando) map.getCanvas().style.cursor = ''; });
+
+  map.on('click', (e) => {
+    if (estado.desenhando) {
+      estado.pontos.push([e.lngLat.lng, e.lngLat.lat]);
+      atualizarDesenho();
+      return;
+    }
+    const camadasVisiveis = CAMADAS.map((c) => c.id + '-fill').filter((id) => map.getLayoutProperty(id, 'visibility') !== 'none');
+    const feats = map.queryRenderedFeatures(e.point, { layers: camadasVisiveis });
+    if (!feats.length) return;
+
+    const html = feats
+      .map((f) => {
+        const id = f.layer.id.replace('-fill', '');
+        const c = CAMADAS.find((x) => x.id === id);
+        return `<div class="pop-camada">${esc(c.nome)}</div>${DESCREVER[id](f.properties)}`;
+      })
+      .join('<hr>');
+    new maplibregl.Popup({ maxWidth: '300px' }).setLngLat(e.lngLat).setHTML(html).addTo(map);
+
+    const faz = feats.find((f) => f.layer.id === 'fazendas-fill');
+    if (faz) {
+      const idx = D.fazendas.features.findIndex((f) => f.properties.id === faz.properties.id);
+      if (idx >= 0) { $('#sel-fazenda').value = String(idx); selecionarArea(areaDeFazenda(D.fazendas.features[idx]), false); }
+    }
+  });
+
+  // ---------- Seleção de área ----------
+  D.fazendas.features.forEach((f, i) => {
+    const o = document.createElement('option');
+    o.value = String(i);
+    o.textContent = f.properties.nome;
+    $('#sel-fazenda').appendChild(o);
+  });
+
+  $('#sel-fazenda').addEventListener('change', (e) => {
+    if (e.target.value === '') return;
+    selecionarArea(areaDeFazenda(D.fazendas.features[Number(e.target.value)]));
+  });
+
+  function areaDeFazenda(f) {
+    const p = f.properties;
+    return { feature: f, nome: p.nome, car: p.car, municipio: p.municipio, reserva_legal_ha: p.reserva_legal_ha, origem: 'Base CAR (demonstração)' };
+  }
+
+  function selecionarArea(area, enquadrar = true) {
+    estado.area = area;
+    estado.resultado = null;
+    mostrarErro('');
+    map.getSource('area').setData({ type: 'FeatureCollection', features: [area.feature] });
+    map.getSource('conflitos').setData(vazio());
+    $('#resultado').hidden = true;
+    $('#btn-laudo').hidden = true;
+    $('#btn-analisar').disabled = false;
+
+    const ha = turf.area(area.feature) / 1e4;
+    const linhas = [
+      ['Área', area.nome],
+      ['Origem', area.origem],
+      area.car ? ['CAR', area.car] : null,
+      ['Tamanho', fmtHa(ha)],
+      area.reserva_legal_ha != null ? ['Reserva legal', fmtHa(area.reserva_legal_ha)] : null,
+    ].filter(Boolean);
+    const info = $('#info-area');
+    info.innerHTML = `<dl class="info-area" style="margin:0;display:contents">${linhas
+      .map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`)
+      .join('')}</dl>`;
+    info.hidden = false;
+
+    if (enquadrar) enquadrarArea(800);
+  }
+
+  function enquadrarArea(duracao) {
+    const b = turf.bbox(estado.area.feature);
+    map.fitBounds([[b[0], b[1]], [b[2], b[3]]], { padding: 70, duration: duracao, maxZoom: 14 });
+  }
+
+  function mostrarErro(msg) {
+    $('#erro').textContent = msg;
+    $('#erro').hidden = !msg;
+  }
+
+  // ---------- Desenho ----------
+  $('#btn-desenhar').addEventListener('click', () => {
+    estado.desenhando = true;
+    estado.pontos = [];
+    $('#barra-desenho').hidden = false;
+    map.doubleClickZoom.disable();
+    map.getCanvas().style.cursor = 'crosshair';
+    atualizarDesenho();
+  });
+
+  $('#btn-desfazer').addEventListener('click', () => { estado.pontos.pop(); atualizarDesenho(); });
+  $('#btn-cancelar').addEventListener('click', encerrarDesenho);
+
+  $('#btn-concluir').addEventListener('click', () => {
+    if (estado.pontos.length < 3) { mostrarErro('Marque pelo menos 3 vértices.'); return; }
+    const anel = estado.pontos.concat([estado.pontos[0]]);
+    const feature = turf.polygon([anel]);
+    if (turf.kinks(feature).features.length) { mostrarErro('O polígono se cruza. Desenhe sem cruzar as linhas.'); return; }
+    encerrarDesenho();
+    $('#sel-fazenda').value = '';
+    selecionarArea({ feature, nome: 'Área desenhada', origem: 'Desenho manual', reserva_legal_ha: null });
+  });
+
+  function atualizarDesenho() {
+    const feats = estado.pontos.map((p) => turf.point(p));
+    if (estado.pontos.length >= 2) {
+      const linha = estado.pontos.length >= 3 ? estado.pontos.concat([estado.pontos[0]]) : estado.pontos;
+      feats.push(turf.lineString(linha));
+    }
+    map.getSource('desenho').setData({ type: 'FeatureCollection', features: feats });
+  }
+
+  function encerrarDesenho() {
+    estado.desenhando = false;
+    estado.pontos = [];
+    $('#barra-desenho').hidden = true;
+    map.doubleClickZoom.enable();
+    map.getCanvas().style.cursor = '';
+    map.getSource('desenho').setData(vazio());
+  }
+
+  // ---------- Importação GeoJSON ----------
+  $('#btn-importar').addEventListener('click', () => $('#arquivo').click());
+
+  $('#arquivo').addEventListener('change', async (e) => {
+    const arq = e.target.files[0];
+    e.target.value = '';
+    if (!arq) return;
+    try {
+      const gj = JSON.parse(await arq.text());
+      const feats = gj.type === 'FeatureCollection' ? gj.features : gj.type === 'Feature' ? [gj] : [{ type: 'Feature', properties: {}, geometry: gj }];
+      const poligonos = [];
+      feats.forEach((f) => {
+        const g = f && f.geometry;
+        if (!g) return;
+        if (g.type === 'Polygon') poligonos.push(g.coordinates);
+        if (g.type === 'MultiPolygon') g.coordinates.forEach((c) => poligonos.push(c));
+      });
+      if (!poligonos.length) throw new Error('Nenhum polígono encontrado no arquivo.');
+      const x = poligonos[0][0][0][0], y = poligonos[0][0][0][1];
+      if (Math.abs(x) > 180 || Math.abs(y) > 90) throw new Error('Coordenadas projetadas. Exporte o arquivo em WGS84 (EPSG:4326).');
+
+      const feature = poligonos.length === 1 ? turf.polygon(poligonos[0]) : turf.multiPolygon(poligonos);
+      const p = (feats[0] && feats[0].properties) || {};
+      const rl = Number(p.reserva_legal_ha);
+      $('#sel-fazenda').value = '';
+      selecionarArea({
+        feature,
+        nome: p.nome || p.name || arq.name,
+        car: p.car || p.cod_imovel || null,
+        origem: 'Arquivo importado',
+        reserva_legal_ha: Number.isFinite(rl) && rl > 0 ? rl : null,
+      });
+    } catch (err) {
+      mostrarErro('Não foi possível importar: ' + err.message);
+    }
+  });
+
+  // ---------- Análise espacial ----------
+  function intersecoes(area, colecao) {
+    const res = [];
+    colecao.features.forEach((f) => {
+      try {
+        if (!turf.booleanIntersects(area, f)) return;
+        const geom = turf.intersect(area, f);
+        if (geom) res.push({ feature: f, geom, ha: turf.area(geom) / 1e4 });
+      } catch (err) {
+        console.warn('Falha na interseção', err);
+      }
+    });
+    return res;
+  }
+
+  function analisar(area) {
+    const haTotal = turf.area(area.feature) / 1e4;
+    const conflitos = [];
+    const checks = [];
+
+    function check(titulo, base, itens, statusSeHouver, descrever) {
+      const ha = itens.reduce((s, i) => s + i.ha, 0);
+      itens.forEach((i) => conflitos.push({ ...i.geom, properties: { status: statusSeHouver, rotulo: titulo } }));
+      checks.push({
+        titulo, base, ha,
+        status: itens.length ? statusSeHouver : 'ok',
+        detalhes: itens.length ? itens.map((i) => `${descrever(i.feature.properties)}: ${fmtHa(i.ha)}`) : ['Nenhuma sobreposição encontrada.'],
+      });
+    }
+
+    const desm = intersecoes(area.feature, D.desmatamento);
+    check('Desmatamento após 31/12/2020', 'Data de corte do Regulamento Europeu (EUDR)',
+      desm.filter((i) => i.feature.properties.ano >= 2021), 'bad', (p) => `PRODES ${p.ano}`);
+    check('Desmatamento entre 2009 e 2020', 'Posterior a 22/07/2008, o marco do Código Florestal',
+      desm.filter((i) => i.feature.properties.ano >= 2009 && i.feature.properties.ano <= 2020), 'warn', (p) => `PRODES ${p.ano}`);
+    check('Supressão anterior a 22/07/2008', 'Área rural consolidada (informativo)',
+      desm.filter((i) => i.feature.properties.ano <= 2008), 'info', (p) => `PRODES ${p.ano}`);
+
+    check('Embargos ambientais', 'Áreas embargadas pelo IBAMA',
+      intersecoes(area.feature, D.embargos), 'bad', (p) => `Embargo ${p.numero}`);
+
+    const ucs = intersecoes(area.feature, D.ucs);
+    check('UC de Proteção Integral', 'Lei 9.985/2000 (SNUC)',
+      ucs.filter((i) => i.feature.properties.grupo === 'Proteção Integral'), 'bad', (p) => p.nome);
+    check('UC de Uso Sustentável', 'Uso permitido com restrições do plano de manejo',
+      ucs.filter((i) => i.feature.properties.grupo === 'Uso Sustentável'), 'warn', (p) => p.nome);
+
+    check('Terras Indígenas', 'Sobreposição com TI (FUNAI)',
+      intersecoes(area.feature, D.tis), 'bad', (p) => p.nome);
+
+    // Reserva legal: 20% no Cerrado fora da Amazônia Legal (art. 12, Lei 12.651/2012)
+    if (area.reserva_legal_ha == null) {
+      checks.push({ titulo: 'Reserva Legal (mín. 20%)', base: 'Art. 12 da Lei 12.651/2012', status: 'info', ha: 0,
+        detalhes: ['Não informada. Selecione um imóvel do CAR ou importe um arquivo com "reserva_legal_ha".'] });
+    } else {
+      const pct = area.reserva_legal_ha / haTotal;
+      const falta = Math.max(0, haTotal * 0.2 - area.reserva_legal_ha);
+      checks.push({
+        titulo: 'Reserva Legal (mín. 20%)', base: 'Art. 12 da Lei 12.651/2012', ha: area.reserva_legal_ha,
+        status: pct >= 0.2 ? 'ok' : 'warn',
+        detalhes: [`Declarada: ${fmtHa(area.reserva_legal_ha)} (${fmtPct(pct)} do imóvel)` + (falta > 0 ? `. Déficit: ${fmtHa(falta)}` : '')],
+      });
+    }
+
+    const pior = checks.reduce((m, c) => (STATUS[c.status].ordem > STATUS[m].ordem ? c.status : m), 'ok');
+    const geral = pior === 'info' ? 'ok' : pior;
+    const centro = turf.centroid(area.feature).geometry.coordinates;
+    return { geral, checks, conflitos, haTotal, centro, data: new Date() };
+  }
+
+  $('#btn-analisar').addEventListener('click', () => {
+    if (!estado.area) return;
+    const r = analisar(estado.area);
+    estado.resultado = r;
+    map.getSource('conflitos').setData({ type: 'FeatureCollection', features: r.conflitos });
+    renderResultado(r);
+  });
+
+  const RESUMO = {
+    ok: 'Nenhum impedimento socioambiental encontrado.',
+    warn: 'Há pontos de atenção que pedem análise técnica.',
+    bad: 'Há impedimentos para comercialização ou crédito.',
+  };
+
+  function renderResultado(r) {
+    const el = $('#resultado');
+    el.innerHTML =
+      `<div class="geral ${r.geral}"><span class="selo ${r.geral}">${STATUS[r.geral].rotulo}</span>` +
+      `<div>${RESUMO[r.geral]}<small>${r.checks.filter((c) => c.status !== 'ok').length} de ${r.checks.length} verificações com ocorrência</small></div></div>` +
+      r.checks
+        .map((c) =>
+          `<div class="check ${c.status}"><div class="check-topo"><span class="check-titulo">${esc(c.titulo)}</span>` +
+          `<span class="selo ${c.status}">${STATUS[c.status].rotulo}</span></div>` +
+          `<div class="check-base">${esc(c.base)}</div><ul>${c.detalhes.map((d) => `<li>${esc(d)}</li>`).join('')}</ul></div>`)
+        .join('');
+    el.hidden = false;
+    $('#btn-laudo').hidden = false;
+  }
+
+  // ---------- Laudo ----------
+  $('#btn-laudo').addEventListener('click', gerarLaudo);
+
+  async function gerarLaudo() {
+    const r = estado.resultado, a = estado.area;
+    if (!r || !a) return;
+
+    enquadrarArea(0);
+    await Promise.race([new Promise((ok) => map.once('idle', ok)), new Promise((ok) => setTimeout(ok, 3000))]);
+    let img = '';
+    try { img = map.getCanvas().toDataURL('image/png'); } catch (err) { console.warn('Sem imagem do mapa', err); }
+
+    const dataStr = r.data.toLocaleString('pt-BR');
+    const protocolo = 'GL-' + r.data.getTime().toString(36).toUpperCase();
+    $('#laudo').innerHTML = `
+      <div class="l-topo">
+        <div><h1>GeoLEM · Laudo de Conformidade Socioambiental</h1>
+        <div class="l-sub">Protocolo ${protocolo} · Emitido em ${esc(dataStr)}</div></div>
+      </div>
+      <table>
+        <tr><th>Área</th><td>${esc(a.nome)}</td><th>Origem</th><td>${esc(a.origem)}</td></tr>
+        <tr><th>CAR</th><td>${esc(a.car || '-')}</td><th>Tamanho</th><td>${fmtHa(r.haTotal)}</td></tr>
+        <tr><th>Município</th><td>${esc(a.municipio || '-')}</td><th>Centroide</th><td>${r.centro[1].toFixed(5)}, ${r.centro[0].toFixed(5)}</td></tr>
+      </table>
+      <div class="l-geral ${r.geral}">Resultado geral: ${STATUS[r.geral].rotulo}. ${RESUMO[r.geral]}</div>
+      ${img ? `<img src="${img}" alt="Mapa da área analisada">` : ''}
+      <table>
+        <tr><th>Verificação</th><th>Base</th><th>Resultado</th><th>Detalhes</th></tr>
+        ${r.checks.map((c) => `<tr><td>${esc(c.titulo)}</td><td>${esc(c.base)}</td><td>${STATUS[c.status].rotulo}</td><td>${c.detalhes.map(esc).join('<br>')}</td></tr>`).join('')}
+      </table>
+      <div class="l-aviso">DOCUMENTO DE DEMONSTRAÇÃO gerado pelo protótipo GeoLEM com dados <strong>fictícios</strong>.
+      Não tem validade legal e não substitui análise técnica feita por profissional habilitado.</div>`;
+
+    window.print();
+  }
+
+  // ---------- Camadas e mapa base ----------
+  function montarCamadasUI() {
+    $('#lista-camadas').innerHTML = CAMADAS.map((c) =>
+      `<label><input type="checkbox" data-camada="${c.id}" checked>` +
+      `<span class="amostra" style="border-color:${c.cor};background:${c.cor}55"></span>${esc(c.nome)}</label>`).join('');
+    $('#lista-camadas').addEventListener('change', (e) => {
+      const id = e.target.dataset.camada;
+      if (!id) return;
+      const vis = e.target.checked ? 'visible' : 'none';
+      map.setLayoutProperty(id + '-fill', 'visibility', vis);
+      map.setLayoutProperty(id + '-line', 'visibility', vis);
+    });
+  }
+
+  document.querySelectorAll('input[name="base"]').forEach((r) =>
+    r.addEventListener('change', (e) => {
+      const sat = e.target.value === 'satelite';
+      map.setLayoutProperty('base-satelite', 'visibility', sat ? 'visible' : 'none');
+      map.setLayoutProperty('base-osm', 'visibility', sat ? 'none' : 'visible');
+    }));
+})();
+  </script>
+</body>
+</html>

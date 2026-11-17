@@ -1,0 +1,494 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>GeoLEM</title>
+  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
+  <style>
+    :root {
+      --bg: #0e1411; --painel: #141c18; --painel-2: #1b2520; --borda: #2a3830;
+      --texto: #e7eee9; --suave: #97a89d; --marca: #4cc38a; --marca-tinta: #062a1b;
+      --ok: #3fb87f; --warn: #f5a524; --bad: #e5484d; --info: #5aa9e6; --raio: 10px;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; background: var(--bg); color: var(--texto);
+      font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+    button, select, input { font: inherit; }
+    :focus-visible { outline: 2px solid var(--marca); outline-offset: 2px; }
+    .app { display: flex; height: 100vh; }
+    .painel { width: 400px; flex: none; overflow-y: auto; background: var(--painel); border-right: 1px solid var(--borda);
+      padding: 16px; display: flex; flex-direction: column; gap: 14px; }
+    .area-mapa { flex: 1; min-width: 0; position: relative; }
+    #mapa { position: absolute; inset: 0; }
+
+    .topo { display: flex; align-items: center; gap: 10px; }
+    .logo { width: 38px; height: 38px; border-radius: 9px; display: grid; place-items: center;
+      background: var(--marca); color: var(--marca-tinta); font-size: 22px; font-weight: 700; }
+    .topo h1 { margin: 0; font-size: 19px; }
+    .sub { margin: 0; color: var(--suave); font-size: 12.5px; }
+    .tag { margin-left: auto; font-size: 11px; text-transform: uppercase; letter-spacing: .6px;
+      border: 1px solid var(--borda); color: var(--suave); padding: 2px 8px; border-radius: 99px; }
+
+    .bases { font-size: 12px; color: var(--suave); border: 1px solid var(--borda); border-radius: var(--raio); padding: 8px 10px; }
+    .bases summary { cursor: pointer; color: var(--texto); }
+    .bases ul { margin: 6px 0 0; padding-left: 16px; }
+    .bases.erro { border-color: var(--bad); color: #ff9a9c; }
+
+    .bloco { background: var(--painel-2); border: 1px solid var(--borda); border-radius: var(--raio);
+      padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+    .bloco h2 { margin: 0; font-size: 12px; text-transform: uppercase; letter-spacing: .8px; color: var(--suave); }
+    .rotulo { font-size: 12px; color: var(--suave); }
+
+    input[type=search], input[type=number], .btn {
+      color: var(--texto); background: var(--painel); border: 1px solid var(--borda); border-radius: 8px; padding: 8px 10px; }
+    input[type=search], input[type=number] { width: 100%; }
+    .btn { cursor: pointer; }
+    .btn:hover:not(:disabled) { border-color: var(--marca); }
+    .btn:disabled { opacity: .45; cursor: not-allowed; }
+    .btn-primario { background: var(--marca); border-color: var(--marca); color: var(--marca-tinta); font-weight: 600; }
+    .btn-largo { width: 100%; }
+    .linha-botoes { display: flex; gap: 8px; flex-wrap: wrap; }
+    .linha-botoes .btn { flex: 1; }
+
+    .busca { position: relative; }
+    .lista-busca { list-style: none; margin: 4px 0 0; padding: 0; border: 1px solid var(--borda); border-radius: 8px;
+      max-height: 240px; overflow-y: auto; background: var(--painel); }
+    .lista-busca li { padding: 7px 10px; cursor: pointer; border-bottom: 1px solid var(--borda); }
+    .lista-busca li:last-child { border-bottom: 0; }
+    .lista-busca li:hover, .lista-busca li:focus { background: var(--painel-2); outline: none; }
+    .lista-busca small { display: block; color: var(--suave); word-break: break-all; }
+
+    .barra-desenho { border: 1px dashed #ffd400; border-radius: 8px; padding: 10px; }
+    .barra-desenho p { margin: 0 0 8px; font-size: 12.5px; color: #ffe26b; }
+    .info-area { display: grid; grid-template-columns: auto 1fr; gap: 4px 10px; font-size: 13px; margin: 0; }
+    .info-area dt { color: var(--suave); }
+    .info-area dd { margin: 0; word-break: break-word; font-variant-numeric: tabular-nums; }
+    .erro { margin: 0; color: #ff8a8d; font-size: 12.5px; }
+
+    .geral { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 8px; font-weight: 600; }
+    .geral small { display: block; font-weight: 400; color: var(--suave); }
+    .geral.ok { background: rgba(63,184,127,.14); border: 1px solid var(--ok); }
+    .geral.warn { background: rgba(245,165,36,.13); border: 1px solid var(--warn); }
+    .geral.bad { background: rgba(229,72,77,.14); border: 1px solid var(--bad); }
+    .protocolo { font-size: 12px; color: var(--suave); margin: 6px 0 8px; font-variant-numeric: tabular-nums; }
+    .check { border-left: 3px solid var(--borda); padding: 6px 0 6px 10px; margin-bottom: 6px; }
+    .check.ok { border-color: var(--ok); } .check.info { border-color: var(--info); }
+    .check.warn { border-color: var(--warn); } .check.bad { border-color: var(--bad); }
+    .check-topo { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+    .check-titulo { font-weight: 600; }
+    .check-base { color: var(--suave); font-size: 12px; }
+    .check ul { margin: 4px 0 0; padding-left: 16px; font-size: 12.5px; font-variant-numeric: tabular-nums; }
+    .selo { font-size: 11px; font-weight: 700; white-space: nowrap; padding: 1px 8px; border-radius: 99px; }
+    .selo.ok { background: var(--ok); color: #04210f; } .selo.info { background: var(--info); color: #04182a; }
+    .selo.warn { background: var(--warn); color: #2a1a00; } .selo.bad { background: var(--bad); color: #fff; }
+
+    .lista-camadas { display: flex; flex-direction: column; gap: 6px; }
+    .lista-camadas label { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+    .amostra { width: 14px; height: 14px; border-radius: 3px; border: 2px solid; flex: none; }
+    .legenda-prodes { display: flex; gap: 10px; flex-wrap: wrap; font-size: 11.5px; color: var(--suave); padding-left: 22px; }
+    .legenda-prodes span::before { content: ""; display: inline-block; width: 10px; height: 10px; border-radius: 2px;
+      margin-right: 4px; vertical-align: -1px; background: var(--c); }
+    .base { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    .segmentado { display: flex; border: 1px solid var(--borda); border-radius: 8px; overflow: hidden; }
+    .segmentado label { padding: 5px 10px; cursor: pointer; font-size: 12.5px; }
+    .segmentado input { position: absolute; opacity: 0; pointer-events: none; }
+    .segmentado label:has(input:checked) { background: var(--marca); color: var(--marca-tinta); font-weight: 600; }
+
+    .dica-zoom { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); z-index: 2;
+      background: rgba(20,28,24,.9); border: 1px solid var(--borda); border-radius: 99px; padding: 5px 14px; font-size: 12.5px; }
+    .maplibregl-popup-content { background: #fff; color: #1a1a1a; font: 13px/1.4 system-ui, sans-serif; border-radius: 8px; max-height: 300px; overflow-y: auto; }
+    .maplibregl-popup-content strong { display: block; margin-bottom: 2px; }
+    .maplibregl-popup-content hr { border: 0; border-top: 1px solid #ddd; margin: 6px 0; }
+    .pop-camada { font-size: 11px; text-transform: uppercase; letter-spacing: .5px; color: #667; }
+    .pop-acao { margin-top: 6px; background: #1d7a52; color: #fff; border: 0; border-radius: 6px; padding: 4px 10px; cursor: pointer; }
+
+    @media (max-width: 760px) {
+      .app { flex-direction: column-reverse; height: auto; }
+      .area-mapa { height: 55vh; flex: none; }
+      .painel { width: 100%; border-right: 0; border-top: 1px solid var(--borda); }
+    }
+
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="painel">
+      <header class="topo">
+        <div class="logo" aria-hidden="true">◈</div>
+        <div>
+          <h1>GeoLEM</h1>
+          <p class="sub">Compliance socioambiental de áreas rurais</p>
+        </div>
+        <span class="tag">beta</span>
+      </header>
+
+      <details id="bases" class="bases"><summary>Carregando bases…</summary></details>
+
+      <section class="bloco">
+        <h2>Área a analisar</h2>
+        <div class="busca">
+          <label class="rotulo" for="busca">Buscar imóvel por nome ou código (SIGEF/CAR)</label>
+          <input id="busca" type="search" placeholder="Ex.: Fazenda Santa…" autocomplete="off">
+          <ul id="lista-busca" class="lista-busca" hidden></ul>
+        </div>
+        <div class="linha-botoes">
+          <button id="btn-desenhar" class="btn" type="button">✎ Desenhar no mapa</button>
+          <button id="btn-importar" class="btn" type="button">⇪ Importar arquivo</button>
+          <input id="arquivo" type="file" accept=".kml,.kmz,.zip,.geojson,.json,.gpkg" hidden>
+        </div>
+        <p class="rotulo" style="margin:0">Ou clique num imóvel no mapa. Arquivos aceitos: KML, KMZ, Shapefile (.zip), GeoJSON e GPKG.</p>
+
+        <div id="barra-desenho" class="barra-desenho" hidden>
+          <p>Clique no mapa para marcar os vértices da área.</p>
+          <div class="linha-botoes">
+            <button id="btn-concluir" class="btn btn-primario" type="button">Concluir</button>
+            <button id="btn-desfazer" class="btn" type="button">Desfazer</button>
+            <button id="btn-cancelar" class="btn" type="button">Cancelar</button>
+          </div>
+        </div>
+
+        <dl id="info-area" class="info-area" hidden></dl>
+        <div id="campo-rl" hidden>
+          <label class="rotulo" for="rl">Reserva legal declarada no CAR (ha), opcional</label>
+          <input id="rl" type="number" min="0" step="0.01" placeholder="Ex.: 650">
+        </div>
+        <p id="erro" class="erro" hidden></p>
+      </section>
+
+      <section class="bloco">
+        <h2>Verificação</h2>
+        <button id="btn-analisar" class="btn btn-primario btn-largo" type="button" disabled>Analisar conformidade</button>
+        <div id="resultado" hidden></div>
+        <button id="btn-laudo" class="btn btn-largo" type="button" hidden>⎙ Laudo em PDF com QR code</button>
+      </section>
+
+      <section class="bloco">
+        <h2>Camadas</h2>
+        <div id="lista-camadas" class="lista-camadas"></div>
+        <div class="base">
+          <span class="rotulo">Mapa base</span>
+          <div class="segmentado" role="radiogroup" aria-label="Mapa base">
+            <label><input type="radio" name="base" value="satelite" checked> Satélite</label>
+            <label><input type="radio" name="base" value="osm"> Mapa</label>
+          </div>
+        </div>
+      </section>
+    </aside>
+
+    <div class="area-mapa">
+      <div id="mapa" aria-label="Mapa"></div>
+      <div id="dica-zoom" class="dica-zoom" hidden>Aproxime o mapa para ver imóveis e desmatamento</div>
+    </div>
+  </div>
+
+
+  <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6.5.0/turf.min.js"></script>
+  <script>
+  (function () {
+    'use strict';
+    const API = '';  // mesma origem: a API serve este arquivo
+    const CENTRO_LEM = [-45.7866, -12.0956];
+    const $ = (s) => document.querySelector(s);
+    const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const fmtHa = (v) => Number(v).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + ' ha';
+    const fmtData = (iso) => iso ? new Date(iso).toLocaleDateString('pt-BR') : '-';
+    const ROTULO = { ok: 'Conforme', info: 'Informativo', warn: 'Atenção', bad: 'Não conforme' };
+
+    async function api(caminho, opcoes) {
+      const r = await fetch(API + caminho, opcoes);
+      let corpo = null;
+      try { corpo = await r.json(); } catch (_) { /* sem corpo JSON */ }
+      if (!r.ok) {
+        const d = corpo && corpo.detail;
+        throw new Error(typeof d === 'string' ? d : (Array.isArray(d) ? d.map((x) => x.msg).join('; ') : `Erro ${r.status}`));
+      }
+      return corpo;
+    }
+
+    const CAMADAS = [
+      { id: 'imoveis', nome: 'Imóveis (SIGEF/CAR)', cor: '#4cc38a', fill: 0.04 },
+      { id: 'desmatamento', nome: 'Desmatamento PRODES', cor: '#f5a524', fill: 0.5,
+        corFill: ['step', ['coalesce', ['get', 'ano'], 2010], '#9aa3a0', 2009, '#f5a524', 2021, '#e5484d'] },
+      { id: 'embargos', nome: 'Embargos IBAMA', cor: '#ff2d55', fill: 0.35 },
+      { id: 'ucs', nome: 'Unidades de Conservação', cor: '#3e9bff', fill: 0.12 },
+      { id: 'tis', nome: 'Terras Indígenas', cor: '#c084fc', fill: 0.2 },
+    ];
+    const DESCREVER = {
+      imoveis: (p) => `<strong>${esc(p.nome || 'Imóvel sem nome')}</strong>${esc(p.tipo)} ${esc(p.codigo || '')}<br>${p.area_ha ? fmtHa(p.area_ha) : ''}` +
+        `<br><button class="pop-acao" data-imovel="${esc(p.id)}">Analisar este imóvel</button>`,
+      desmatamento: (p) => `<strong>Desmatamento PRODES ${esc(p.ano)}</strong>Imagem: ${esc(p.data_imagem || '-')}`,
+      embargos: (p) => `<strong>Embargo TAD ${esc(p.numero_tad || '?')}</strong>${esc(p.data_embargo || '')}<br>${esc(p.infracao || '')}`,
+      ucs: (p) => `<strong>${esc(p.nome)}</strong>${esc(p.categoria || '')} · ${p.grupo === 'PI' ? 'Proteção Integral' : 'Uso Sustentável'} · ${esc(p.esfera || '')}`,
+      tis: (p) => `<strong>${esc(p.nome)}</strong>${esc(p.etnia || '')} · ${esc(p.fase || '')}`,
+    };
+
+    const vazio = () => ({ type: 'FeatureCollection', features: [] });
+    const estado = { area: null, resultado: null, desenhando: false, pontos: [] };
+
+    // ---------- Mapa ----------
+    const map = new maplibregl.Map({
+      container: 'mapa', center: CENTRO_LEM, zoom: 10,
+      style: {
+        version: 8,
+        sources: {
+          satelite: { type: 'raster', tileSize: 256, maxzoom: 19, attribution: 'Imagens © Esri, Maxar, Earthstar Geographics',
+            tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'] },
+          osm: { type: 'raster', tileSize: 256, maxzoom: 19, attribution: '© colaboradores do OpenStreetMap',
+            tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'] },
+        },
+        layers: [
+          { id: 'base-satelite', type: 'raster', source: 'satelite' },
+          { id: 'base-osm', type: 'raster', source: 'osm', layout: { visibility: 'none' } },
+        ],
+      },
+    });
+    map.addControl(new maplibregl.NavigationControl(), 'top-right');
+    map.addControl(new maplibregl.ScaleControl({ unit: 'metric' }), 'bottom-right');
+
+    map.on('load', () => {
+      CAMADAS.forEach((c) => {
+        map.addSource(c.id, { type: 'vector', tiles: [`${location.origin}${API}/api/tiles/${c.id}/{z}/{x}/{y}.pbf`], maxzoom: 15 });
+        map.addLayer({ id: c.id + '-fill', type: 'fill', source: c.id, 'source-layer': c.id,
+          paint: { 'fill-color': c.corFill || c.cor, 'fill-opacity': c.fill } });
+        map.addLayer({ id: c.id + '-line', type: 'line', source: c.id, 'source-layer': c.id,
+          paint: { 'line-color': c.corFill || c.cor, 'line-width': c.id === 'imoveis' ? 1.2 : 1 } });
+      });
+      map.addSource('area', { type: 'geojson', data: vazio() });
+      map.addLayer({ id: 'area-fill', type: 'fill', source: 'area', paint: { 'fill-color': '#ffd400', 'fill-opacity': 0.08 } });
+      map.addSource('conflitos', { type: 'geojson', data: vazio() });
+      map.addLayer({ id: 'conflitos-fill', type: 'fill', source: 'conflitos',
+        paint: { 'fill-color': ['match', ['get', 'status'], 'bad', '#e5484d', 'warn', '#f5a524', '#5aa9e6'], 'fill-opacity': 0.75 } });
+      map.addLayer({ id: 'conflitos-line', type: 'line', source: 'conflitos', paint: { 'line-color': '#ffffff', 'line-width': 1 } });
+      map.addLayer({ id: 'area-line', type: 'line', source: 'area', paint: { 'line-color': '#ffd400', 'line-width': 3 } });
+      map.addSource('desenho', { type: 'geojson', data: vazio() });
+      map.addLayer({ id: 'desenho-line', type: 'line', source: 'desenho', filter: ['==', ['geometry-type'], 'LineString'],
+        paint: { 'line-color': '#ffd400', 'line-width': 2, 'line-dasharray': [2, 2] } });
+      map.addLayer({ id: 'desenho-pts', type: 'circle', source: 'desenho', filter: ['==', ['geometry-type'], 'Point'],
+        paint: { 'circle-radius': 5, 'circle-color': '#ffd400', 'circle-stroke-color': '#000', 'circle-stroke-width': 1 } });
+      montarCamadasUI();
+      atualizarDicaZoom();
+    });
+    map.on('zoomend', atualizarDicaZoom);
+    function atualizarDicaZoom() { $('#dica-zoom').hidden = map.getZoom() >= 9; }
+
+    map.on('mousemove', 'imoveis-fill', () => { if (!estado.desenhando) map.getCanvas().style.cursor = 'pointer'; });
+    map.on('mouseleave', 'imoveis-fill', () => { if (!estado.desenhando) map.getCanvas().style.cursor = ''; });
+
+    map.on('click', (e) => {
+      if (estado.desenhando) { estado.pontos.push([e.lngLat.lng, e.lngLat.lat]); atualizarDesenho(); return; }
+      const visiveis = CAMADAS.map((c) => c.id + '-fill').filter((id) => map.getLayer(id) && map.getLayoutProperty(id, 'visibility') !== 'none');
+      const feats = map.queryRenderedFeatures(e.point, { layers: visiveis });
+      if (!feats.length) return;
+      const vistos = new Set();
+      const html = feats.filter((f) => { const k = f.layer.id + f.properties.id; if (vistos.has(k)) return false; vistos.add(k); return true; })
+        .slice(0, 6).map((f) => {
+          const id = f.layer.id.replace('-fill', '');
+          return `<div class="pop-camada">${esc(CAMADAS.find((c) => c.id === id).nome)}</div>${DESCREVER[id](f.properties)}`;
+        }).join('<hr>');
+      new maplibregl.Popup({ maxWidth: '320px' }).setLngLat(e.lngLat).setHTML(html).addTo(map);
+    });
+    document.addEventListener('click', (e) => {
+      const b = e.target.closest('.pop-acao');
+      if (b) selecionarImovel(Number(b.dataset.imovel));
+    });
+
+    // ---------- Bases carregadas ----------
+    async function carregarBases() {
+      const el = $('#bases');
+      try {
+        const r = await api('/api/bases');
+        if (!r.bases.length) {
+          el.classList.add('erro');
+          el.innerHTML = '<summary>Nenhuma base carregada ainda</summary>Rode a carga: <code>python -m ingest todas</code>';
+          return;
+        }
+        const ultima = r.bases.map((b) => b.concluido_em).sort().pop();
+        el.innerHTML = `<summary>${r.bases.length} bases oficiais · atualizadas em ${fmtData(ultima)}</summary><ul>` +
+          r.bases.map((b) => `<li>${esc(b.descricao)}: ${Number(b.registros).toLocaleString('pt-BR')} registros (${fmtData(b.concluido_em)})</li>`).join('') + '</ul>';
+      } catch (err) {
+        el.classList.add('erro');
+        el.innerHTML = `<summary>API indisponível</summary>${esc(err.message)}`;
+      }
+    }
+    carregarBases();
+
+    // ---------- Busca ----------
+    let temporizador = null;
+    $('#busca').addEventListener('input', (e) => {
+      clearTimeout(temporizador);
+      const q = e.target.value.trim();
+      if (q.length < 3) { $('#lista-busca').hidden = true; return; }
+      temporizador = setTimeout(async () => {
+        try {
+          const itens = await api('/api/imoveis?q=' + encodeURIComponent(q));
+          const ul = $('#lista-busca');
+          ul.innerHTML = itens.length ? itens.map((i) =>
+            `<li tabindex="0" data-id="${i.id}">${esc(i.nome || 'Imóvel sem nome')}<small>${esc(i.tipo)} ${esc(i.codigo || '')} · ${i.area_ha ? fmtHa(i.area_ha) : ''}</small></li>`).join('')
+            : '<li>Nenhum imóvel encontrado.</li>';
+          ul.hidden = false;
+        } catch (err) { mostrarErro(err.message); }
+      }, 300);
+    });
+    $('#lista-busca').addEventListener('click', (e) => {
+      const li = e.target.closest('li[data-id]');
+      if (li) { $('#lista-busca').hidden = true; selecionarImovel(Number(li.dataset.id)); }
+    });
+    $('#lista-busca').addEventListener('keydown', (e) => { if (e.key === 'Enter') e.target.click(); });
+
+    async function selecionarImovel(id) {
+      try {
+        const f = await api('/api/imoveis/' + id);
+        const p = f.properties;
+        selecionarArea({ feature: f, nome: p.nome || `${p.tipo} ${p.codigo}`, origem: p.tipo === 'CAR' ? 'CAR (SICAR)' : 'SIGEF (INCRA)', imovel: p });
+      } catch (err) { mostrarErro(err.message); }
+    }
+
+    // ---------- Seleção da área ----------
+    function selecionarArea(area) {
+      estado.area = area;
+      estado.resultado = null;
+      mostrarErro('');
+      map.getSource('area').setData({ type: 'FeatureCollection', features: [area.feature] });
+      map.getSource('conflitos').setData(vazio());
+      $('#resultado').hidden = true;
+      $('#btn-laudo').hidden = true;
+      $('#btn-analisar').disabled = false;
+      const im = area.imovel || {};
+      const linhas = [
+        ['Área', area.nome], ['Origem', area.origem], im.codigo ? ['Código', im.codigo] : null,
+        im.municipio ? ['Município', im.uf ? `${im.municipio}/${im.uf}` : im.municipio] : null,
+        // Mesma área geodésica do PostGIS quando há; o Turf (esfera) dá ~0,6% a mais
+        ['Tamanho', fmtHa(im.area_ha ?? turf.area(area.feature) / 1e4)],
+        im.situacao ? ['Situação', im.situacao] : null,
+      ].filter(Boolean);
+      $('#info-area').innerHTML = linhas.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('');
+      $('#info-area').hidden = false;
+      $('#campo-rl').hidden = false;
+      $('#rl').value = im.reserva_legal_ha != null ? Number(im.reserva_legal_ha).toFixed(2) : '';
+      enquadrar(800);
+    }
+    function enquadrar(duracao) {
+      const b = turf.bbox(estado.area.feature);
+      map.fitBounds([[b[0], b[1]], [b[2], b[3]]], { padding: 60, duration: duracao, maxZoom: 15 });
+    }
+    function mostrarErro(msg) { $('#erro').textContent = msg; $('#erro').hidden = !msg; }
+
+    // ---------- Desenho ----------
+    $('#btn-desenhar').addEventListener('click', () => {
+      estado.desenhando = true; estado.pontos = [];
+      $('#barra-desenho').hidden = false;
+      map.doubleClickZoom.disable();
+      map.getCanvas().style.cursor = 'crosshair';
+      atualizarDesenho();
+    });
+    $('#btn-desfazer').addEventListener('click', () => { estado.pontos.pop(); atualizarDesenho(); });
+    $('#btn-cancelar').addEventListener('click', encerrarDesenho);
+    $('#btn-concluir').addEventListener('click', () => {
+      if (estado.pontos.length < 3) { mostrarErro('Marque pelo menos 3 vértices.'); return; }
+      const feature = turf.polygon([estado.pontos.concat([estado.pontos[0]])]);
+      if (turf.kinks(feature).features.length) { mostrarErro('O polígono se cruza. Desenhe sem cruzar as linhas.'); return; }
+      encerrarDesenho();
+      selecionarArea({ feature, nome: 'Área desenhada', origem: 'Desenho manual', imovel: null });
+    });
+    function atualizarDesenho() {
+      const feats = estado.pontos.map((p) => turf.point(p));
+      if (estado.pontos.length >= 2) feats.push(turf.lineString(estado.pontos.length >= 3 ? estado.pontos.concat([estado.pontos[0]]) : estado.pontos));
+      map.getSource('desenho').setData({ type: 'FeatureCollection', features: feats });
+    }
+    function encerrarDesenho() {
+      estado.desenhando = false; estado.pontos = [];
+      $('#barra-desenho').hidden = true;
+      map.doubleClickZoom.enable();
+      map.getCanvas().style.cursor = '';
+      map.getSource('desenho').setData(vazio());
+    }
+
+    // ---------- Importação ----------
+    $('#btn-importar').addEventListener('click', () => $('#arquivo').click());
+    $('#arquivo').addEventListener('change', async (e) => {
+      const arq = e.target.files[0];
+      e.target.value = '';
+      if (!arq) return;
+      const dados = new FormData();
+      dados.append('arquivo', arq);
+      try {
+        const f = await api('/api/arquivos/geometria', { method: 'POST', body: dados });
+        selecionarArea({ feature: f, nome: f.properties.nome || arq.name, origem: `Arquivo ${arq.name} (${f.properties.feicoes} feição/ões)`, imovel: null });
+      } catch (err) { mostrarErro('Não foi possível importar: ' + err.message); }
+    });
+
+    // ---------- Análise ----------
+    $('#btn-analisar').addEventListener('click', async () => {
+      if (!estado.area) return;
+      const btn = $('#btn-analisar');
+      btn.disabled = true; btn.textContent = 'Analisando…';
+      mostrarErro('');
+      try {
+        const rl = $('#rl').value === '' ? null : Number($('#rl').value);
+        const r = await api('/api/analises', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            geometria: estado.area.feature.geometry,
+            imovel_id: estado.area.imovel ? estado.area.imovel.id : null,
+            nome: estado.area.nome, reserva_legal_ha: rl,
+          }),
+        });
+        estado.resultado = r;
+        map.getSource('conflitos').setData(r.conflitos);
+        renderResultado(r);
+      } catch (err) {
+        mostrarErro(err.message);
+      } finally {
+        btn.disabled = false; btn.textContent = 'Analisar conformidade';
+      }
+    });
+
+    const itemTexto = (i) => esc(i.descricao) + (i.ha != null ? `: ${fmtHa(i.ha)}` : '');
+
+    function renderResultado(r) {
+      const com = r.checks.filter((c) => c.status === 'warn' || c.status === 'bad').length;
+      $('#resultado').innerHTML =
+        `<div class="geral ${r.geral}"><span class="selo ${r.geral}">${ROTULO[r.geral]}</span><div>${esc(r.resumo)}` +
+        `<small>${com} verificação(ões) com ocorrência · área de ${fmtHa(r.area.area_ha)}</small></div></div>` +
+        `<div class="protocolo">Protocolo ${esc(r.protocolo)}</div>` +
+        r.checks.map((c) =>
+          `<div class="check ${c.status}"><div class="check-topo"><span class="check-titulo">${esc(c.titulo)}</span>` +
+          `<span class="selo ${c.status}">${ROTULO[c.status]}</span></div><div class="check-base">${esc(c.base)}</div>` +
+          `<ul>${c.itens.map((i) => `<li>${itemTexto(i)}</li>`).join('')}</ul></div>`).join('');
+      $('#resultado').hidden = false;
+      $('#btn-laudo').hidden = false;
+    }
+
+    // ---------- Laudo ----------
+    // O PDF é gerado no servidor a partir da análise gravada, com QR code de verificação.
+    $('#btn-laudo').addEventListener('click', () => {
+      const r = estado.resultado;
+      if (r) window.open(`/api/analises/${encodeURIComponent(r.protocolo)}/laudo.pdf`, '_blank', 'noopener');
+    });
+
+    // ---------- Camadas e mapa base ----------
+    function montarCamadasUI() {
+      $('#lista-camadas').innerHTML = CAMADAS.map((c) =>
+        `<label><input type="checkbox" id="camada-${c.id}" data-camada="${c.id}" checked>` +
+        `<span class="amostra" style="border-color:${c.cor};background:${c.cor}55"></span>${esc(c.nome)}</label>` +
+        (c.id === 'desmatamento' ? '<div class="legenda-prodes"><span style="--c:#9aa3a0">até 2008</span><span style="--c:#f5a524">2009 a 2020</span><span style="--c:#e5484d">2021 em diante</span></div>' : '')
+      ).join('');
+      $('#lista-camadas').addEventListener('change', (e) => {
+        const id = e.target.dataset.camada;
+        if (!id) return;
+        const vis = e.target.checked ? 'visible' : 'none';
+        map.setLayoutProperty(id + '-fill', 'visibility', vis);
+        map.setLayoutProperty(id + '-line', 'visibility', vis);
+      });
+    }
+    document.querySelectorAll('input[name="base"]').forEach((r) => r.addEventListener('change', (e) => {
+      const sat = e.target.value === 'satelite';
+      map.setLayoutProperty('base-satelite', 'visibility', sat ? 'visible' : 'none');
+      map.setLayoutProperty('base-osm', 'visibility', sat ? 'none' : 'visible');
+    }));
+  })();
+  </script>
+</body>
+</html>
