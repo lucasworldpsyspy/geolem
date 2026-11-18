@@ -3,6 +3,7 @@
 Para adicionar uma base: crie um `Fonte` com o leitor (WFS ou ArcGIS) e a função que
 mapeia os atributos de origem para as colunas da tabela de destino.
 """
+import os
 import re
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
@@ -21,6 +22,8 @@ COLUNAS = {
                      "infracao", "situacao_desmatamento", "area_embargada_ha"],
     "geo.unidades_conservacao": ["id_origem", "nome", "categoria", "grupo", "esfera"],
     "geo.terras_indigenas": ["id_origem", "nome", "etnia", "fase"],
+    "geo.alertas_desmatamento": ["id_origem", "data_deteccao", "data_publicacao", "area_ha", "classe", "situacao",
+                                 "satelite"],
     "geo.territorios": ["id_origem", "tipo", "nome", "municipio", "uf", "fase", "familias"],
     "geo.imoveis": ["tipo", "codigo", "nome", "municipio", "uf", "situacao"],
 }
@@ -160,6 +163,23 @@ def m_embargo(p: dict) -> dict:
     }
 
 
+def m_deter(p: dict) -> dict:
+    km2 = numero(p.get("areatotalkm"))
+    return {"id_origem": texto(p.get("gid")), "data_deteccao": data(p.get("view_date")),
+            "data_publicacao": data(p.get("publish_month")) or data(p.get("created_date")),
+            "area_ha": km2 * 100 if km2 is not None else None, "classe": texto(p.get("classname")),
+            "situacao": None, "satelite": " ".join(filter(None, [texto(p.get("satellite")), texto(p.get("sensor"))])) or None}
+
+
+def m_mapbiomas(p: dict) -> dict:
+    classes = p.get("deforestationClasses")
+    return {"id_origem": texto(p.get("alertCode")), "data_deteccao": data(p.get("detectedAt")),
+            "data_publicacao": data(p.get("publishedAt")), "area_ha": numero(p.get("areaHa")),
+            "classe": ", ".join(classes) if isinstance(classes, list) else texto(classes),
+            "situacao": texto(p.get("statusName")),
+            "satelite": ", ".join(p["sources"]) if isinstance(p.get("sources"), list) else texto(p.get("sources"))}
+
+
 def m_quilombo(p: dict) -> dict:
     return {"id_origem": texto(p.get("cd_quilomb")) or texto(p.get("objectid")), "tipo": "quilombola",
             "nome": texto(p.get("nm_comunid")), "municipio": texto(p.get("nm_municip")), "uf": texto(p.get("cd_uf")),
@@ -196,6 +216,18 @@ def _wfs(tipo, ordenar):
     return lambda bbox: clientes.wfs(TERRABRASILIS, tipo, bbox, ordenar)
 
 
+def _credenciais_mapbiomas() -> tuple[str, str]:
+    """Conta gratuita em plataforma.alerta.mapbiomas.org, configurada no .env."""
+    email, senha = os.getenv("MAPBIOMAS_EMAIL", ""), os.getenv("MAPBIOMAS_SENHA", "")
+    if not email or not senha:
+        raise RuntimeError("MapBiomas Alerta não configurado: defina MAPBIOMAS_EMAIL e MAPBIOMAS_SENHA no .env.")
+    return email, senha
+
+
+def mapbiomas_configurado() -> bool:
+    return bool(os.getenv("MAPBIOMAS_EMAIL") and os.getenv("MAPBIOMAS_SENHA"))
+
+
 def _arcgis(caminho, campos, raiz=IBAMA):
     return lambda bbox: clientes.arcgis(f"{raiz}/{caminho}", bbox, campos)
 
@@ -227,6 +259,12 @@ FONTES: dict[str, Fonte] = {f.id: f for f in [
           f"{IBAMA}/lim_terra_indigena_a/FeatureServer/12",
           _arcgis("lim_terra_indigena_a/FeatureServer/12", ["objectid", "terrai_cod", "terrai_nom", "etnia_nome", "fase_ti"]),
           m_ti),
+    Fonte("deter_cerrado", "DETER Cerrado: alertas de desmatamento (INPE)", "geo.alertas_desmatamento",
+          f"{TERRABRASILIS} · deter-cerrado-nb:deter_cerrado",
+          _wfs("deter-cerrado-nb:deter_cerrado", "gid"), m_deter),
+    Fonte("mapbiomas_alerta", "MapBiomas Alerta: alertas validados de desmatamento", "geo.alertas_desmatamento",
+          "https://plataforma.alerta.mapbiomas.org",
+          lambda bbox: clientes.mapbiomas_alertas(*_credenciais_mapbiomas(), bbox), m_mapbiomas),
     Fonte("quilombolas_incra", "Territórios quilombolas (INCRA)", "geo.territorios",
           f"{IBAMA_SINC}/lim_quilombos_incra_a/FeatureServer/0",
           _arcgis("lim_quilombos_incra_a/FeatureServer/0",

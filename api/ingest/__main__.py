@@ -12,7 +12,7 @@ import sys
 from app.config import DATABASE_URL, REGIAO_BBOX
 
 from .carregar import carregar, conectar
-from .fontes import FONTES
+from .fontes import FONTES, mapbiomas_configurado
 
 
 def main() -> int:
@@ -28,6 +28,9 @@ def main() -> int:
         return 0
 
     ids = list(FONTES) if args.fontes == ["todas"] else args.fontes
+    if args.fontes == ["todas"] and not mapbiomas_configurado():
+        ids.remove("mapbiomas_alerta")
+        print("MapBiomas Alerta ignorado (sem MAPBIOMAS_EMAIL/MAPBIOMAS_SENHA no .env).")
     desconhecidas = [i for i in ids if i not in FONTES]
     if desconhecidas:
         print(f"Fontes desconhecidas: {', '.join(desconhecidas)}. Use --listar.")

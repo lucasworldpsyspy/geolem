@@ -380,7 +380,9 @@ def gerar_pdf(resultado: dict, url_verificacao: str, imagens: dict[str, bytes] |
         "<b>Não conforme</b>; entre 22/07/2008 e 31/12/2020 (marco do Código Florestal, Lei 12.651/2012), como "
         "<b>Atenção</b>. A classificação usa a data da imagem de satélite do PRODES quando disponível, pois o ano PRODES vai "
         "de agosto a julho. Embargos do IBAMA, UCs de Proteção Integral, Terras Indígenas e territórios quilombolas "
-        "reconhecidos (portaria, decreto ou título) resultam em <b>Não conforme</b>; UCs de Uso Sustentável, territórios "
+        "reconhecidos (portaria, decreto ou título) e alertas validados do MapBiomas Alerta posteriores a 31/12/2020 "
+        "resultam em <b>Não conforme</b>; alertas do DETER posteriores a essa data, ainda sem confirmação, em "
+        "<b>Atenção</b>; UCs de Uso Sustentável, territórios "
         "quilombolas em estudo e assentamentos da reforma agrária, em <b>Atenção</b>. A Reserva Legal mínima considerada é de 20% (Cerrado fora da Amazônia "
         f"Legal). Sobreposições menores que {area_min} ha são desconsideradas por serem, em geral, ruído de borda entre "
         "bases. Áreas calculadas sobre o elipsoide (geodésicas).", E_PEQ),

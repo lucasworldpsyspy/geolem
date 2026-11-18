@@ -7,6 +7,8 @@ CAMADAS = {
                  "left(t.infracao, 200) AS infracao, t.area_embargada_ha", 5),
     "ucs": ("geo.unidades_conservacao", "t.id, t.nome, t.categoria, t.grupo, t.esfera", 4),
     "tis": ("geo.terras_indigenas", "t.id, t.nome, t.etnia, t.fase", 4),
+    "alertas": ("geo.alertas_desmatamento", "t.id, t.fonte, to_char(t.data_deteccao, 'DD/MM/YYYY') AS data_deteccao, "
+                "extract(year FROM t.data_deteccao)::int AS ano, round(t.area_ha::numeric, 1) AS area_ha, t.classe", 7),
     "territorios": ("geo.territorios", "t.id, t.tipo, t.nome, t.fase, t.familias", 4),
     "imoveis": ("geo.imoveis", "t.id, t.tipo, t.codigo, t.nome, round(t.area_ha::numeric, 1) AS area_ha", 9),
 }

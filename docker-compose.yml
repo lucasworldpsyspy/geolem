@@ -32,6 +32,9 @@ services:
       WEB_DIR: /app/web
       URL_PUBLICA: ${URL_PUBLICA:-http://localhost:8000}
       IMAGENS_SATELITE: ${IMAGENS_SATELITE:-1}
+      # Conta gratuita em plataforma.alerta.mapbiomas.org (opcional)
+      MAPBIOMAS_EMAIL: ${MAPBIOMAS_EMAIL:-}
+      MAPBIOMAS_SENHA: ${MAPBIOMAS_SENHA:-}
     ports:
       - "127.0.0.1:${API_PORTA:-8000}:8000"  # em produção, o acesso externo passa pelo Caddy (HTTPS)
     volumes:

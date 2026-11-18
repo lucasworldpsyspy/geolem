@@ -42,6 +42,16 @@ def status_uc(grupo: str | None) -> str:
     return "bad" if grupo == "PI" else "warn"
 
 
+# Alertas de desmatamento: MapBiomas Alerta é validado por analistas com imagem de alta resolução;
+# o DETER é um alerta rápido, que ainda precisa ser confirmado pelo PRODES ou por imagem.
+STATUS_ALERTA = {"mapbiomas_alerta": "bad", "deter_cerrado": "warn"}
+
+
+def alerta_pos_corte(data_deteccao: date | None) -> bool:
+    """Só interessam alertas posteriores ao corte do EUDR. Sem data, considera (caso conservador)."""
+    return data_deteccao is None or data_deteccao > CORTE_EUDR
+
+
 # Fases em que o território quilombola já foi reconhecido formalmente (portaria, decreto ou título)
 FASES_QUILOMBO_RECONHECIDO = ("TITUL", "DECRETO", "PORTARIA")
 

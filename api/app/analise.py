@@ -142,6 +142,37 @@ def analisar(conn, geometria: dict, nome: str | None = None, imovel: dict | None
                   "Área rural consolidada (informativo)", "geo.desmatamento",
                   itens_desm("consolidado"), "info")
 
+        # Alertas recentes de desmatamento (MapBiomas Alerta e DETER), posteriores ao corte do EUDR
+        alertas = [r for r in _sobreposicoes(cur, "geo.alertas_desmatamento", "t.fonte, t.data_deteccao, t.id_origem", g)
+                   if regras.alerta_pos_corte(r["data_deteccao"])]
+        fontes_carregadas = {b["fonte"] for lst in bases.values() for b in lst}
+
+        def itens_alerta(fonte, nome):
+            por_ano: dict[int | None, dict] = {}
+            for r in alertas:
+                if r["fonte"] != fonte:
+                    continue
+                ano = r["data_deteccao"].year if r["data_deteccao"] else None
+                gr = por_ano.setdefault(ano, {"n": 0, "ha": 0.0, "geoms": [], "datas": []})
+                gr["n"] += 1
+                gr["ha"] += r["ha"]
+                gr["geoms"].append(r["geom_json"])
+                if r["data_deteccao"]:
+                    gr["datas"].append(r["data_deteccao"])
+            return [{"descricao": f"{nome} {ano or 'sem data'}: {gr['n']} alerta(s)"
+                                  + (f", o mais recente detectado em {_data_br(max(gr['datas']))}" if gr["datas"] else ""),
+                     "ha": round(gr["ha"], 2), "geoms": gr["geoms"]}
+                    for ano, gr in sorted(por_ano.items(), key=lambda kv: kv[0] or 0, reverse=True)]
+
+        if "mapbiomas_alerta" in fontes_carregadas:  # base opcional: só entra no laudo se estiver configurada
+            adicionar("alertas_mapbiomas", "Alertas validados de desmatamento após 31/12/2020",
+                      "MapBiomas Alerta: validados por analistas com imagem de alta resolução", "geo.alertas_desmatamento",
+                      itens_alerta("mapbiomas_alerta", "MapBiomas"), regras.STATUS_ALERTA["mapbiomas_alerta"],
+                      fonte="mapbiomas_alerta")
+        adicionar("alertas_deter", "Alertas recentes de desmatamento (DETER)",
+                  "INPE: alerta rápido, ainda sem confirmação do PRODES ou de imagem", "geo.alertas_desmatamento",
+                  itens_alerta("deter_cerrado", "DETER"), regras.STATUS_ALERTA["deter_cerrado"], fonte="deter_cerrado")
+
         # 4. Embargos IBAMA
         emb = _sobreposicoes(cur, "geo.embargos", "t.numero_tad, t.serie_tad, t.data_embargo, t.infracao", g)
         adicionar("embargos", "Embargos ambientais", "Áreas embargadas pelo IBAMA", "geo.embargos", [

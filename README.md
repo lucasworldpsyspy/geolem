@@ -51,6 +51,8 @@ geolem/
 |---|---|---|
 | `prodes_cerrado` | INPE / TerraBrasilis (WFS) | desmatamento anual, com data da imagem |
 | `prodes_cerrado_2000` | INPE / TerraBrasilis (WFS) | desmatamento acumulado até 2000 |
+| `deter_cerrado` | INPE / TerraBrasilis (WFS) | alertas rápidos de desmatamento (atualização semanal) |
+| `mapbiomas_alerta` | MapBiomas Alerta (API, conta gratuita) | alertas de desmatamento validados (opcional) |
 | `embargos_ibama` | IBAMA (ArcGIS) | áreas embargadas |
 | `ucs_cerrado_inpe` | INPE / TerraBrasilis (WFS) | Unidades de Conservação no Cerrado |
 | `ucs_federais_icmbio` | ICMBio via IBAMA (ArcGIS) | UCs federais |
@@ -64,7 +66,7 @@ geolem/
 Cada carga fica registrada em `geo.cargas` com data, origem e número de registros. O laudo lista essas datas.
 
 Carga de 17/11/2026, na região padrão (LEM e entorno): 21.304 polígonos PRODES anuais e 1.643 do acumulado até 2000,
-165 embargos, 3.683 imóveis SIGEF, 5 UCs (todas vindas da base do INPE) e 9 assentamentos do INCRA. As camadas de UC
+3.592 alertas DETER (2018 a 2026), 165 embargos, 3.683 imóveis SIGEF, 5 UCs (todas vindas da base do INPE) e 9 assentamentos do INCRA. As camadas de UC
 do ICMBio e do SFB, a de Terras Indígenas e a de territórios quilombolas não têm feições na região padrão (o quilombo
 mais próximo, Lajeado, fica em Dianópolis/TO). A carga completa leva cerca de 2 minutos.
 
@@ -80,6 +82,8 @@ Algumas camadas do INCRA chegam com letras acentuadas corrompidas na origem; a c
 | Desmatamento com imagem após 31/12/2020 | **Não conforme** (data de corte do EUDR) |
 | Desmatamento entre 22/07/2008 e 31/12/2020 | **Atenção** (marco do Código Florestal) |
 | Supressão até 22/07/2008 | Informativo (área consolidada) |
+| Alerta MapBiomas (validado) detectado após 31/12/2020 | **Não conforme** |
+| Alerta DETER detectado após 31/12/2020 | **Atenção** (alerta rápido, ainda sem confirmação) |
 | Embargo IBAMA | **Não conforme** |
 | UC de Proteção Integral / Terra Indígena | **Não conforme** |
 | UC de Uso Sustentável | **Atenção** |
@@ -90,6 +94,12 @@ Algumas camadas do INCRA chegam com letras acentuadas corrompidas na origem; a c
 | Base não carregada | **Atenção**: o sistema nunca diz "Conforme" sem ter consultado a base |
 
 O ano PRODES vai de agosto a julho, então o sistema usa a **data da imagem** quando ela existe.
+O PRODES é anual e sai com atraso; o **DETER** cobre os meses que o PRODES ainda não publicou (um desmatamento de
+março aparece no laudo na mesma semana em que o INPE publica o alerta).
+
+**MapBiomas Alerta (opcional):** crie uma conta gratuita em https://plataforma.alerta.mapbiomas.org e preencha
+`MAPBIOMAS_EMAIL` e `MAPBIOMAS_SENHA` no `.env`. A carga `todas` passa a incluir a fonte, e a verificação aparece no
+laudo. Sem a conta, essa verificação não aparece (o laudo não marca "Atenção" por uma base opcional).
 Sobreposições menores que `AREA_MINIMA_HA` (padrão 0,1 ha) são ignoradas, porque costumam ser ruído de borda entre bases.
 
 ## Como rodar
@@ -245,7 +255,8 @@ Para restaurar num banco vazio:
 - **Feito na fase 2:** laudo em PDF gerado no servidor, com QR code e código de integridade; imagens de satélite de
   antes e depois; territórios quilombolas e assentamentos; exportação GeoJSON para o EUDR
 - **Feito:** contas por empresa com auditoria; carteira com importação em lote, monitoramento semanal e alertas
-- **Próximos passos:** MapBiomas Alerta, DETER Cerrado e APP por hidrografia; gráfico de NDVI no laudo;
+- **Feito:** alertas recentes do DETER Cerrado e integração com o MapBiomas Alerta
+- **Próximos passos:** APP por hidrografia; gráfico de NDVI no laudo;
   integração com ERPs
 - **Fase 3 (produto):** login, empresas e carteiras de fornecedores, monitoramento contínuo com alertas, integração com ERPs do agro (Siagri, TOTVS, SAP), frontend em React
 

@@ -258,3 +258,20 @@ ALTER TABLE geo.analises ADD COLUMN IF NOT EXISTS empresa_id integer,
                          ADD COLUMN IF NOT EXISTS usuario_id integer,
                          ADD COLUMN IF NOT EXISTS area_id bigint;
 CREATE INDEX IF NOT EXISTS analises_empresa_idx ON geo.analises (empresa_id, criado_em DESC);
+
+-- Alertas de desmatamento recentes: DETER Cerrado (INPE) e MapBiomas Alerta
+CREATE TABLE IF NOT EXISTS geo.alertas_desmatamento (
+  id               bigserial PRIMARY KEY,
+  fonte            text NOT NULL,           -- deter_cerrado | mapbiomas_alerta
+  carga_id         integer REFERENCES geo.cargas(id),
+  id_origem        text,
+  data_deteccao    date,
+  data_publicacao  date,
+  area_ha          double precision,
+  classe           text,
+  situacao         text,
+  satelite         text,
+  geom             geometry(MultiPolygon, 4326) NOT NULL
+);
+CREATE INDEX IF NOT EXISTS alertas_desm_geom_idx ON geo.alertas_desmatamento USING gist (geom);
+CREATE INDEX IF NOT EXISTS alertas_desm_fonte_idx ON geo.alertas_desmatamento (fonte);

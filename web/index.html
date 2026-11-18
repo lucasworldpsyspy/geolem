@@ -236,6 +236,7 @@
       { id: 'ucs', nome: 'Unidades de Conservação', cor: '#3e9bff', fill: 0.12 },
       { id: 'tis', nome: 'Terras Indígenas', cor: '#c084fc', fill: 0.2 },
       { id: 'territorios', nome: 'Quilombolas e assentamentos', cor: '#ff8a3d', fill: 0.15 },
+      { id: 'alertas', nome: 'Alertas DETER / MapBiomas', cor: '#ff3df5', fill: 0.35 },
     ];
     const DESCREVER = {
       imoveis: (p) => `<strong>${esc(p.nome || 'Imóvel sem nome')}</strong>${esc(p.tipo)} ${esc(p.codigo || '')}<br>${p.area_ha ? fmtHa(p.area_ha) : ''}` +
@@ -244,6 +245,8 @@
       embargos: (p) => `<strong>Embargo TAD ${esc(p.numero_tad || '?')}</strong>${esc(p.data_embargo || '')}<br>${esc(p.infracao || '')}`,
       ucs: (p) => `<strong>${esc(p.nome)}</strong>${esc(p.categoria || '')} · ${p.grupo === 'PI' ? 'Proteção Integral' : 'Uso Sustentável'} · ${esc(p.esfera || '')}`,
       tis: (p) => `<strong>${esc(p.nome)}</strong>${esc(p.etnia || '')} · ${esc(p.fase || '')}`,
+      alertas: (p) => `<strong>${p.fonte === 'mapbiomas_alerta' ? 'MapBiomas Alerta' : 'Alerta DETER'}</strong>` +
+        `Detectado em ${esc(p.data_deteccao || '-')}<br>${p.area_ha ? fmtHa(p.area_ha) : ''}`,
       territorios: (p) => `<strong>${esc(p.nome || 'Sem nome')}</strong>${p.tipo === 'quilombola' ? 'Território quilombola' : 'Assentamento'}` +
         ` · ${esc(p.fase || '')}${p.familias ? `<br>${esc(p.familias)} famílias` : ''}`,
     };
