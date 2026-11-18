@@ -194,29 +194,36 @@ class _ImagemSatelite(Flowable):
         def xy(p):
             return (p[0] - x0) / (x1 - x0) * w, (p[1] - y0) / (y1 - y0) * h
 
-        def contorno(geom, cor, espessura, tracejado=None):
+        def contorno(geom, cor, espessura, tracejado=None, preencher=False):
             c.setStrokeColor(cor)
             c.setLineWidth(espessura)
             c.setDash(*(tracejado or ([], 0)))
+            if preencher:
+                c.setFillColor(cor, alpha=0.38)
             for pol in _aneis(geom):
-                for anel in pol:
+                caminho = c.beginPath()
+                for anel in pol:  # buracos no mesmo caminho, com regra par-ímpar
                     if len(anel) < 3:
                         continue
-                    caminho = c.beginPath()
                     caminho.moveTo(*xy(anel[0]))
                     for p in anel[1:]:
                         caminho.lineTo(*xy(p))
                     caminho.close()
-                    c.drawPath(caminho, stroke=1, fill=0)
+                c.drawPath(caminho, stroke=1, fill=1 if preencher else 0, fillMode=0)
 
         c.saveState()
         c.drawImage(ImageReader(BytesIO(self.png)), 0, 0, w, h)
         caminho = c.beginPath()
         caminho.rect(0, 0, w, h)
         c.clipPath(caminho, stroke=0, fill=0)
+        # Na imagem "depois", o que é Não conforme fica pintado: é onde se vê a mudança
+        depois = self.meta.get("tipo") == "depois"
         for f in self.resultado.get("conflitos", {}).get("features", []):
-            if f["properties"].get("status") in ("bad", "warn"):
-                contorno(f["geometry"], COR_CONFLITO[f["properties"]["status"]], 0.9, ([2, 1.5], 0))
+            st = f["properties"].get("status")
+            if st == "bad" and depois:
+                contorno(f["geometry"], COR_CONFLITO["bad"], 0.9, preencher=True)
+            elif st in ("bad", "warn"):
+                contorno(f["geometry"], COR_CONFLITO[st], 0.9, ([2, 1.5], 0))
         contorno(self.resultado["area"]["geometria"], colors.HexColor("#ffe14d"), 1.5)
         c.restoreState()
         c.setStrokeColor(BORDA)
@@ -247,8 +254,8 @@ def _secao_imagens(resultado: dict, imagens: dict[str, bytes], largura_util: flo
     t.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP"), ("LEFTPADDING", (0, 0), (-1, -1), 0),
                            ("RIGHTPADDING", (0, 0), (-1, -1), 3 * mm)]))
     nota = Paragraph(
-        "Cor natural, resolução de 10 m. Contorno amarelo: área analisada; tracejado vermelho ou laranja: sobreposições "
-        "com ocorrência. Compare as duas imagens para ver mudanças de uso do solo desde 2020. "
+        "Cor natural, resolução de 10 m. Contorno amarelo: área analisada; em vermelho na imagem mais recente: áreas "
+        "Não conformes; tracejado: demais sobreposições com ocorrência. Compare as duas imagens para ver mudanças de uso do solo desde 2020. "
         f"{_esc(metas[0].get('atribuicao') or '')} ({', '.join(anos)}).", E_AVISO)
     return [Paragraph("Imagens de satélite: antes e depois", E_H2), KeepTogether([t, Spacer(1, 3), nota])]
 
