@@ -16,7 +16,15 @@ from .planilha import ErroPlanilha, _chave, _linhas
 rotas = APIRouter(prefix="/api/admin", tags=["admin"], dependencies=[Depends(superadmin)])
 
 ETAPAS = ["novo", "contato", "reuniao", "piloto", "proposta", "cliente", "perdido"]
-TIPOS = ["armazem", "revenda", "trading", "cooperativa", "banco", "consultoria", "agroindustria", "outro"]
+TIPOS = ["armazem", "revenda", "trading", "cooperativa", "banco", "consultoria", "agroindustria",
+         "produtor", "comprador_graos", "investidor_anjo", "rede_anjos", "fundo_vc", "cvc", "aceleradora", "fomento",
+         "marketplace", "associacao", "outro"]
+CATEGORIAS = ["cliente", "produtor", "comprador", "investidor", "parceiro"]
+# Categoria sugerida pelo tipo, quando a planilha ou o lead não informam
+CATEGORIA_DO_TIPO = {"produtor": "produtor", "comprador_graos": "comprador", "investidor_anjo": "investidor",
+                     "rede_anjos": "investidor", "fundo_vc": "investidor", "cvc": "investidor", "fomento": "investidor",
+                     "aceleradora": "parceiro", "marketplace": "parceiro", "associacao": "parceiro",
+                     "consultoria": "parceiro"}
 
 
 def _iso(linhas):
@@ -48,12 +56,13 @@ def resumo():
                  (SELECT count(*) FROM geo.analises WHERE criado_em >= date_trunc('month', now())) AS laudos_mes,
                  (SELECT count(*) FROM app.areas WHERE ativa) AS areas_monitoradas,
                  (SELECT coalesce(sum(valor_estimado), 0) FROM app.prospects
-                    WHERE etapa NOT IN ('cliente', 'perdido')) AS pipeline_valor,
+                    WHERE etapa NOT IN ('cliente', 'perdido') AND categoria IN ('cliente', 'comprador')) AS pipeline_valor,
                  (SELECT count(*) FROM app.prospects WHERE proximo_em <= current_date
                     AND etapa NOT IN ('cliente', 'perdido')) AS tarefas_atrasadas""").fetchone()
         funil = conn.execute(
             """SELECT etapa, count(*) AS n, coalesce(sum(valor_estimado), 0) AS valor FROM app.prospects
-               GROUP BY etapa""").fetchall()
+               WHERE categoria IN ('cliente', 'comprador') GROUP BY etapa""").fetchall()
+        categorias = conn.execute("SELECT categoria, count(*) AS n FROM app.prospects GROUP BY categoria").fetchall()
         laudos = conn.execute(
             """SELECT to_char(date_trunc('month', criado_em), 'YYYY-MM') AS mes, count(*) AS n FROM geo.analises
                WHERE criado_em >= date_trunc('month', now()) - interval '5 months' GROUP BY 1 ORDER BY 1""").fetchall()
@@ -64,7 +73,8 @@ def resumo():
     return {**_iso([dict(r)])[0],
             "funil": [{"etapa": e, "n": por_etapa.get(e, {}).get("n", 0),
                        "valor": float(por_etapa.get(e, {}).get("valor", 0))} for e in ETAPAS],
-            "laudos_por_mes": laudos, "leads_por_semana": leads}
+            "laudos_por_mes": laudos, "leads_por_semana": leads,
+            "por_categoria": {c["categoria"]: c["n"] for c in categorias}}
 
 
 # ---------- empresas clientes e licenças ----------
@@ -193,6 +203,10 @@ def redefinir_senha(usuario_id: int, request: Request, u: dict = Depends(superad
 # ---------- CRM ----------
 class Prospect(BaseModel):
     nome: str | None = Field(None, max_length=160)
+    categoria: str | None = None
+    pais: str | None = Field(None, max_length=60)
+    site: str | None = Field(None, max_length=200)
+    ticket: str | None = Field(None, max_length=120)
     cnpj: str | None = Field(None, max_length=20)
     tipo: str | None = None
     municipio: str | None = Field(None, max_length=100)
@@ -215,6 +229,8 @@ def _validar_prospect(p: Prospect):
         raise HTTPException(422, "Etapa inválida.")
     if p.tipo and p.tipo not in TIPOS:
         raise HTTPException(422, "Tipo inválido.")
+    if p.categoria and p.categoria not in CATEGORIAS:
+        raise HTTPException(422, "Categoria inválida.")
 
 
 @rotas.get("/prospects")
@@ -226,7 +242,7 @@ def prospects():
                       e.situacao AS empresa_situacao
                FROM app.prospects p LEFT JOIN app.empresas e ON e.id = p.empresa_id
                ORDER BY p.atualizado_em DESC""").fetchall()
-    return {"prospects": _iso(linhas), "etapas": ETAPAS, "tipos": TIPOS}
+    return {"prospects": _iso(linhas), "etapas": ETAPAS, "tipos": TIPOS, "categorias": CATEGORIAS}
 
 
 @rotas.post("/prospects")
@@ -236,6 +252,7 @@ def criar_prospect(p: Prospect, u: dict = Depends(superadmin)):
         raise HTTPException(422, "Informe o nome da empresa.")
     dados = {k: v for k, v in p.model_dump().items() if v is not None}
     dados.setdefault("origem", "manual")
+    dados.setdefault("categoria", CATEGORIA_DO_TIPO.get(p.tipo or "", "cliente"))
     with pool.connection() as conn:
         pid = conn.execute(f"""INSERT INTO app.prospects ({', '.join(dados)}) VALUES ({', '.join(['%s'] * len(dados))})
                                RETURNING id""", tuple(dados.values())).fetchone()["id"]
@@ -300,6 +317,8 @@ COLUNAS_PROSPECT = {
     "contato_nome": ("contato", "contato_nome", "responsavel"), "contato_cargo": ("cargo", "contato_cargo"),
     "email": ("email", "e_mail"), "telefone": ("telefone", "celular", "whatsapp"),
     "valor_estimado": ("valor_estimado", "valor"), "notas": ("notas", "observacoes", "obs"),
+    "categoria": ("categoria",), "pais": ("pais", "country"), "site": ("site", "website", "url"),
+    "ticket": ("ticket", "cheque", "faixa_de_investimento"),
 }
 
 
@@ -325,7 +344,10 @@ async def importar_prospects(arquivo: UploadFile = File(...)):
             if not d["nome"]:
                 continue
             tipo = _chave(d["tipo"] or "")
-            d["tipo"] = next((t for t in TIPOS if tipo.startswith(t[:5])), "outro" if d["tipo"] else None)
+            d["tipo"] = (tipo if tipo in TIPOS else
+                         next((t for t in TIPOS if tipo.startswith(t[:5])), "outro" if d["tipo"] else None))
+            cat = _chave(d["categoria"] or "")
+            d["categoria"] = cat if cat in CATEGORIAS else CATEGORIA_DO_TIPO.get(d["tipo"] or "", "cliente")
             d["uf"] = (d["uf"] or "")[:2].upper() or None
             try:
                 d["valor_estimado"] = float(str(d["valor_estimado"]).replace(".", "").replace(",", ".")) if d["valor_estimado"] else None
@@ -352,8 +374,9 @@ def exportar_prospects():
         linhas = conn.execute("SELECT * FROM app.prospects ORDER BY nome").fetchall()
     buf = io.StringIO()
     w = csv.writer(buf, delimiter=";")
-    cab = ["nome", "cnpj", "tipo", "municipio", "uf", "contato_nome", "contato_cargo", "email", "telefone", "origem",
-           "etapa", "valor_estimado", "proximo_passo", "proximo_em", "notas"]
+    cab = ["categoria", "nome", "cnpj", "tipo", "municipio", "uf", "pais", "site", "ticket", "contato_nome",
+           "contato_cargo", "email", "telefone", "origem", "etapa", "valor_estimado", "proximo_passo", "proximo_em",
+           "notas"]
     w.writerow(cab)
     for l in linhas:
         w.writerow(["" if l[c] is None else l[c] for c in cab])
@@ -381,10 +404,13 @@ def lead_para_prospect(lead_id: int, u: dict = Depends(superadmin)):
         if l["prospect_id"]:
             return {"id": l["prospect_id"]}
         tipo = l["perfil"] if l["perfil"] in TIPOS else ("outro" if l["perfil"] else None)
+        if l["interesse"] == "selo":
+            tipo = "produtor"
+        categoria = CATEGORIA_DO_TIPO.get(tipo or "", "cliente")
         pid = conn.execute(
-            """INSERT INTO app.prospects (nome, tipo, municipio, contato_nome, email, telefone, origem, notas)
-               VALUES (%s, %s, %s, %s, %s, %s, 'site', %s) RETURNING id""",
-            (l["empresa"] or l["nome"], tipo, l["municipio"], l["nome"], l["email"], l["telefone"],
+            """INSERT INTO app.prospects (nome, tipo, categoria, municipio, contato_nome, email, telefone, origem, notas)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, 'site', %s) RETURNING id""",
+            (l["empresa"] or l["nome"], tipo, categoria, l["municipio"], l["nome"], l["email"], l["telefone"],
              f"Lead do site ({l['interesse']}): {l['detalhe']}")).fetchone()["id"]
         conn.execute("UPDATE app.leads SET prospect_id = %s WHERE lower(email) = lower(%s)", (pid, l["email"]))
         conn.execute("INSERT INTO app.interacoes (prospect_id, tipo, texto, usuario_id) VALUES (%s, 'nota', %s, %s)",

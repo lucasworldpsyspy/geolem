@@ -101,13 +101,14 @@
           <button class="btn btn-peq" role="tab" aria-selected="true" data-aba="consulta" type="button">Consulta grátis</button>
           <button class="btn btn-peq" role="tab" aria-selected="false" data-aba="relatorio" type="button">Relatório do município</button>
           <button class="btn btn-peq" role="tab" aria-selected="false" data-aba="boletim" type="button">Boletim semanal</button>
+          <button class="btn btn-peq" role="tab" aria-selected="false" data-aba="selo" type="button">Sou produtor</button>
         </div>
         <form class="lead" id="form-lead" novalidate>
           <p class="aviso" id="explica"></p>
-          <label class="campo" data-so="consulta">Código do imóvel no SIGEF ou no CAR
+          <label class="campo" data-so="consulta selo">Código do imóvel no SIGEF ou no CAR
             <input id="f-codigo" type="text" maxlength="80" placeholder="Ex.: 5ba5ff8d-08e2-…">
           </label>
-          <label class="campo" data-so="relatorio boletim">Município
+          <label class="campo" data-so="relatorio boletim selo">Município
             <select id="f-municipio"></select>
           </label>
           <div class="duas">
@@ -118,7 +119,7 @@
             <label class="campo">WhatsApp (opcional) <input id="f-telefone" type="text" maxlength="40" autocomplete="tel"></label>
             <label class="campo">Empresa <input id="f-empresa" type="text" maxlength="160" autocomplete="organization"></label>
           </div>
-          <label class="campo">Você é de
+          <label class="campo" data-so="consulta relatorio boletim">Você é de
             <select id="f-perfil">
               <option value="">Selecione</option><option value="armazem">Armazém / cerealista</option>
               <option value="revenda">Revenda de insumos</option><option value="trading">Trading / exportadora</option>
@@ -155,6 +156,7 @@
     consulta: ['Informe o código do imóvel para ver o resultado geral e quais verificações têm ocorrência. O laudo completo, com mapa, imagens e QR code, faz parte do plano.', 'Consultar'],
     relatorio: ['Receba na hora um PDF com os números do município: imóveis, desmatamento após 2020, alertas do DETER e embargos.', 'Baixar relatório'],
     boletim: ['Toda segunda, um resumo por e-mail dos alertas de desmatamento do DETER publicados no município. Sem spam: dá para sair com um clique.', 'Assinar boletim'],
+    selo: ['Para produtores: o selo de origem verificada mostra a qualquer comprador, por QR code, que a sua área está regular nas bases oficiais. Entre na lista de espera e seja dos primeiros da região.', 'Entrar na lista de espera'],
   };
   function trocarAba(nova) {
     aba = nova;
@@ -211,7 +213,8 @@
       empresa: $('#f-empresa').value.trim() || null, perfil: $('#f-perfil').value || null, consentimento: $('#f-consent').checked };
     if (!contato.nome || !contato.email) { erro.textContent = 'Informe nome e e-mail.'; erro.hidden = false; return; }
     if (!contato.consentimento) { erro.textContent = 'Para continuar, marque a autorização de uso dos seus dados.'; erro.hidden = false; return; }
-    const corpo = aba === 'consulta' ? { ...contato, codigo: $('#f-codigo').value.trim() }
+    const corpo = aba === 'selo' ? { ...contato, perfil: 'produtor', codigo: $('#f-codigo').value.trim() || null, municipio: $('#f-municipio').value }
+      : aba === 'consulta' ? { ...contato, codigo: $('#f-codigo').value.trim() }
       : { ...contato, municipio: $('#f-municipio').value, boletim: aba === 'relatorio' && $('#f-boletim').checked };
     if (aba === 'consulta' && corpo.codigo.length < 6) { erro.textContent = 'Informe o código do imóvel.'; erro.hidden = false; return; }
     const b = $('#enviar'); b.disabled = true; const txt = b.textContent; b.textContent = 'Aguarde…';
@@ -223,6 +226,8 @@
         const url = URL.createObjectURL(await r.blob());
         const a = document.createElement('a'); a.href = url; a.download = `geolem-${corpo.municipio}.pdf`; a.click();
         res.innerHTML = '<p class="sucesso">Relatório baixado. Obrigado! Em breve entramos em contato.</p>';
+      } else if (aba === 'selo') {
+        res.innerHTML = '<p class="sucesso">Você está na lista de espera do selo. Vamos avisar assim que ele estiver disponível no seu município.</p>';
       } else if (aba === 'boletim') {
         res.innerHTML = `<p class="sucesso">Pronto: você vai receber o boletim de ${esc(corpo.municipio)} toda segunda-feira.</p>`;
       } else {

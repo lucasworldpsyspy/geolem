@@ -64,6 +64,7 @@
 
     <!-- CRM -->
     <section data-painel="crm" hidden>
+      <div class="abas" id="categorias" role="tablist" aria-label="Categoria" style="border:0;padding:0;margin-bottom:12px"></div>
       <div class="cabecalho" style="margin-bottom:12px">
         <div class="botoes">
           <input id="busca-crm" type="search" placeholder="Buscar empresa, município ou contato" style="max-width:300px">
@@ -77,7 +78,8 @@
         </div>
       </div>
       <p class="aviso" style="margin-bottom:10px">Planilha: colunas <code>nome</code> (obrigatória), <code>cnpj</code>, <code>tipo</code>, <code>municipio</code>, <code>uf</code>,
-        <code>contato</code>, <code>cargo</code>, <code>email</code>, <code>telefone</code>, <code>valor_estimado</code>, <code>notas</code>. Quem já existe (mesmo CNPJ ou nome) é ignorado.</p>
+        <code>contato</code>, <code>cargo</code>, <code>email</code>, <code>telefone</code>, <code>valor_estimado</code>, <code>notas</code>,
+        e também <code>categoria</code> (cliente, produtor, comprador, investidor, parceiro), <code>pais</code>, <code>site</code> e <code>ticket</code>. Quem já existe (mesmo CNPJ ou nome) é ignorado.</p>
       <div class="quadro" id="quadro"></div>
     </section>
 
@@ -108,17 +110,21 @@
     <form id="form-prospect" novalidate>
       <h3 id="titulo-prospect">Possível cliente</h3>
       <div class="grade-form">
-        <label class="campo largo">Empresa <input name="nome" type="text" required maxlength="160"></label>
+        <label class="campo">Categoria <select name="categoria" id="sel-categoria"></select></label>
+        <label class="campo">Empresa / nome <input name="nome" type="text" required maxlength="160"></label>
         <label class="campo">CNPJ <input name="cnpj" type="text" maxlength="20"></label>
         <label class="campo">Tipo <select name="tipo" id="sel-tipo"></select></label>
         <label class="campo">Município <input name="municipio" type="text" maxlength="100"></label>
         <label class="campo">UF <input name="uf" type="text" maxlength="2"></label>
+        <label class="campo">País <input name="pais" type="text" maxlength="60" placeholder="Brasil"></label>
+        <label class="campo">Site <input name="site" type="text" maxlength="200"></label>
+        <label class="campo" id="campo-ticket">Ticket (faixa de cheque) <input name="ticket" type="text" maxlength="120" placeholder="Ex.: R$ 100 mil a 500 mil"></label>
         <label class="campo">Contato <input name="contato_nome" type="text" maxlength="120"></label>
         <label class="campo">Cargo <input name="contato_cargo" type="text" maxlength="120"></label>
         <label class="campo">E-mail <input name="email" type="email" maxlength="200"></label>
         <label class="campo">Telefone / WhatsApp <input name="telefone" type="text" maxlength="40"></label>
         <label class="campo">Etapa <select name="etapa" id="sel-etapa"></select></label>
-        <label class="campo">Valor estimado (R$/mês) <input name="valor_estimado" type="number" min="0" step="1"></label>
+        <label class="campo"><span id="rotulo-valor">Valor estimado (R$/mês)</span> <input name="valor_estimado" type="number" min="0" step="1"></label>
         <label class="campo">Próximo passo <input name="proximo_passo" type="text" maxlength="300"></label>
         <label class="campo">Data do próximo passo <input name="proximo_em" type="date"></label>
         <label class="campo largo" id="campo-perda">Motivo da perda <input name="motivo_perda" type="text" maxlength="300"></label>
@@ -217,8 +223,20 @@
   const quando = (iso) => iso ? new Date(iso).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : 'nunca';
   Chart.defaults.color = '#97a89d'; Chart.defaults.borderColor = '#2a3830';
   const ETAPA = { novo: 'Novo', contato: 'Contato feito', reuniao: 'Reunião', piloto: 'Piloto', proposta: 'Proposta', cliente: 'Cliente', perdido: 'Perdido' };
-  const TIPO = { armazem: 'Armazém', revenda: 'Revenda', trading: 'Trading', cooperativa: 'Cooperativa', banco: 'Banco', consultoria: 'Consultoria', agroindustria: 'Agroindústria', outro: 'Outro', produtor: 'Produtor' };
-  const INTERESSE = { consulta: 'Consulta grátis', relatorio: 'Relatório do município', boletim: 'Boletim semanal' };
+  const TIPO = { armazem: 'Armazém', revenda: 'Revenda', trading: 'Trading', cooperativa: 'Cooperativa', banco: 'Banco', consultoria: 'Consultoria',
+    agroindustria: 'Agroindústria / usina', produtor: 'Produtor rural', comprador_graos: 'Comprador de grãos', investidor_anjo: 'Investidor-anjo',
+    rede_anjos: 'Rede de anjos', fundo_vc: 'Fundo de venture capital', cvc: 'Venture corporativo (CVC)', aceleradora: 'Aceleradora / programa',
+    fomento: 'Fomento / multilateral', marketplace: 'Marketplace', associacao: 'Associação / evento', outro: 'Outro' };
+  const INTERESSE = { consulta: 'Consulta grátis', relatorio: 'Relatório do município', boletim: 'Boletim semanal', selo: 'Selo do produtor (lista de espera)' };
+  const CATEGORIA = { cliente: 'Clientes', produtor: 'Produtores', comprador: 'Compradores de grãos', investidor: 'Investidores', parceiro: 'Parceiros e canais' };
+  // Cada funil tem o seu vocabulário (as etapas são as mesmas no banco)
+  const ETAPAS_POR_CATEGORIA = {
+    investidor: { novo: 'Mapeado', contato: 'Contato', reuniao: 'Pitch', piloto: 'Due diligence', proposta: 'Term sheet', cliente: 'Investiu', perdido: 'Não seguiu' },
+    produtor: { novo: 'Lead', contato: 'Contato', reuniao: 'Conversa', piloto: 'Selo em teste', proposta: 'Proposta', cliente: 'Selo ativo', perdido: 'Perdido' },
+    parceiro: { novo: 'Mapeado', contato: 'Contato', reuniao: 'Reunião', piloto: 'Teste', proposta: 'Proposta', cliente: 'Parceiro ativo', perdido: 'Não seguiu' },
+  };
+  let categoriaAtual = 'cliente';
+  const etapaNome = (e, cat) => (ETAPAS_POR_CATEGORIA[cat] || ETAPA)[e];
   let prospects = [], planos = {}, situacoes = {}, graficos = [];
 
   async function api(url, opcoes = {}) {
@@ -281,6 +299,8 @@
   async function carregarCRM() {
     const d = await api('/api/admin/prospects');
     prospects = d.prospects;
+    $('#categorias').innerHTML = d.categorias.map((c) => `<button class="btn btn-peq" role="tab" data-categoria="${c}" aria-selected="${c === categoriaAtual}" type="button">${CATEGORIA[c]} (${prospects.filter((p) => p.categoria === c).length})</button>`).join('');
+    $('#sel-categoria').innerHTML = d.categorias.map((c) => `<option value="${c}">${CATEGORIA[c].replace(/s$/, '').replace('Compradores de grãos', 'Comprador de grãos').replace('Parceiros e canai', 'Parceiro')}</option>`).join('');
     if ($('#sel-etapa').options.length === 0) {
       $('#sel-etapa').innerHTML = d.etapas.map((e) => `<option value="${e}">${ETAPA[e]}</option>`).join('');
       $('#sel-tipo').innerHTML = '<option value="">-</option>' + d.tipos.map((t) => `<option value="${t}">${TIPO[t]}</option>`).join('');
@@ -291,20 +311,36 @@
   function desenharQuadro() {
     const t = $('#busca-crm').value.trim().toLowerCase(), tipo = $('#filtro-tipo').value;
     const hoje = new Date().toISOString().slice(0, 10);
-    const lista = prospects.filter((p) => (!tipo || p.tipo === tipo) &&
+    const lista = prospects.filter((p) => p.categoria === categoriaAtual && (!tipo || p.tipo === tipo) &&
       (!t || [p.nome, p.municipio, p.contato_nome, p.email].some((v) => (v || '').toLowerCase().includes(t))));
     $('#quadro').innerHTML = Object.keys(ETAPA).map((e) => {
       const cards = lista.filter((p) => p.etapa === e);
       const soma = cards.reduce((s, p) => s + (p.valor_estimado || 0), 0);
-      return `<div class="coluna"><h3><span>${ETAPA[e]} (${cards.length})</span><span>${soma ? reais(soma) : ''}</span></h3>` +
+      return `<div class="coluna"><h3><span>${etapaNome(e, categoriaAtual)} (${cards.length})</span><span>${soma && categoriaAtual !== 'investidor' ? reais(soma) : ''}</span></h3>` +
         cards.map((p) => `<button class="card" data-prospect="${p.id}" type="button"><b>${esc(p.nome)}</b>
-          <small>${esc(TIPO[p.tipo] || '')}${p.municipio ? ' · ' + esc(p.municipio) : ''}</small>
-          ${p.valor_estimado ? `<small>${reais(p.valor_estimado)}/mês</small>` : ''}
+          <small>${esc(TIPO[p.tipo] || '')}${p.municipio ? ' · ' + esc(p.municipio) : ''}${p.pais && p.pais !== 'Brasil' ? ' · ' + esc(p.pais) : ''}</small>
+          ${p.ticket ? `<small>Ticket: ${esc(p.ticket)}</small>` : ''}
+          ${p.valor_estimado && p.categoria !== 'investidor' ? `<small>${reais(p.valor_estimado)}/mês</small>` : ''}
           ${p.proximo_passo ? `<small class="${p.proximo_em && p.proximo_em <= hoje ? 'atrasado' : ''}">→ ${esc(p.proximo_passo)}${p.proximo_em ? ' · ' + dataBR(p.proximo_em) : ''}</small>` : ''}
           ${p.leads ? `<small>${p.leads} contato(s) pelo site</small>` : ''}</button>`).join('') + '</div>';
     }).join('');
   }
   $('#busca-crm').addEventListener('input', desenharQuadro);
+  $('#categorias').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-categoria]');
+    if (!b) return;
+    categoriaAtual = b.dataset.categoria;
+    document.querySelectorAll('[data-categoria]').forEach((x) => x.setAttribute('aria-selected', String(x === b)));
+    desenharQuadro();
+  });
+  function ajustarFormulario(cat) {
+    const nomes = ETAPAS_POR_CATEGORIA[cat] || ETAPA;
+    [...$('#sel-etapa').options].forEach((o) => { o.textContent = nomes[o.value]; });
+    $('#campo-ticket').hidden = cat !== 'investidor';
+    $('#rotulo-valor').textContent = cat === 'investidor' ? 'Valor esperado do aporte (R$)' : 'Valor estimado (R$/mês)';
+    $('#btn-criar-conta').hidden = !prospectAtual || !!prospectAtual.empresa_id || !['cliente', 'comprador'].includes(cat);
+  }
+  $('#sel-categoria').addEventListener('change', (e) => ajustarFormulario(e.target.value));
   $('#filtro-tipo').addEventListener('change', desenharQuadro);
   $('#quadro').addEventListener('click', (e) => { const c = e.target.closest('[data-prospect]'); if (c) abrirProspect(Number(c.dataset.prospect)); });
 
@@ -318,6 +354,8 @@
     $('#btn-excluir-prospect').hidden = !prospectAtual;
     $('#btn-criar-conta').hidden = !prospectAtual || !!prospectAtual.empresa_id;
     $('#erro-prospect').hidden = true;
+    if (!prospectAtual) $('#sel-categoria').value = categoriaAtual;
+    ajustarFormulario($('#sel-categoria').value);
     if (prospectAtual) carregarHistorico();
     $('#dlg-prospect').showModal();
   }
@@ -446,6 +484,7 @@
     const lista = await api('/api/admin/leads');
     $('#leads').innerHTML = lista.map((l) => {
       const det = l.detalhe || {};
+      if (l.interesse === 'selo') det.municipio = [det.municipio, det.area_ha ? fmtN(det.area_ha) + ' ha' : '', det.codigo].filter(Boolean).join(' · ');
       const detalhe = l.interesse === 'consulta' ? `${esc(det.imovel || det.codigo || '')}${det.resultado ? ` · <span class="selo ${det.resultado}">${{ ok: 'Conforme', warn: 'Atenção', bad: 'Não conforme' }[det.resultado]}</span>` : ''}`
         : esc(det.municipio || l.municipio || '');
       return `<tr><td>${quando(l.criado_em)}</td><td><b>${esc(l.nome)}</b><small>${esc(l.email)}${l.telefone ? ' · ' + esc(l.telefone) : ''}</small></td>

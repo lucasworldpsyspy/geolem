@@ -137,6 +137,27 @@ def relatorio_municipio(p: PedidoRelatorio, request: Request):
                     headers={"Content-Disposition": f'attachment; filename="geolem-{nome}.pdf"'})
 
 
+class PedidoSelo(Contato):
+    municipio: str | None = Field(None, max_length=100)
+    codigo: str | None = Field(None, max_length=80)
+    area_ha: float | None = Field(None, ge=0, le=500000)
+
+
+@rotas.post("/selo")
+def lista_selo(p: PedidoSelo, request: Request):
+    """Produtor entra na lista de espera do selo de origem verificada."""
+    email = _validar(p)
+    ip = ip_de(request) or "-"
+    if limite_formulario_ip.bloqueado(ip):
+        raise HTTPException(429, "Muitos pedidos. Tente de novo em uma hora.")
+    limite_formulario_ip.falhou(ip)
+    p.perfil = "produtor"
+    with pool.connection() as conn:
+        _gravar_lead(conn, p, email, "selo", {"codigo": p.codigo, "area_ha": p.area_ha, "municipio": p.municipio},
+                     ip, municipio=p.municipio)
+    return {"ok": True}
+
+
 class PedidoBoletim(Contato):
     municipio: str = Field(..., max_length=100)
 

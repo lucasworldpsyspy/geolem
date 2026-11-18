@@ -358,3 +358,10 @@ CREATE INDEX IF NOT EXISTS leads_email_idx ON app.leads (lower(email));
 -- Município do alerta (o DETER informa), para o boletim semanal e o observatório
 ALTER TABLE geo.alertas_desmatamento ADD COLUMN IF NOT EXISTS municipio text,
                                      ADD COLUMN IF NOT EXISTS uf text;
+
+-- CRM para além de clientes: produtores, compradores de grãos, investidores e parceiros
+ALTER TABLE app.prospects ADD COLUMN IF NOT EXISTS categoria text NOT NULL DEFAULT 'cliente',  -- cliente | produtor | comprador | investidor | parceiro
+                          ADD COLUMN IF NOT EXISTS pais text NOT NULL DEFAULT 'Brasil',
+                          ADD COLUMN IF NOT EXISTS site text,
+                          ADD COLUMN IF NOT EXISTS ticket text;  -- investidores: faixa de cheque, ex. "R$ 100 mil a 500 mil"
+CREATE INDEX IF NOT EXISTS prospects_categoria_idx ON app.prospects (categoria, etapa);
