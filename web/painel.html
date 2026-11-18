@@ -202,18 +202,19 @@
   function desenharRisco(r) {
     if (!r || !r.carteira.ha) return;
     const reais = (v) => v == null ? 'sem preço' : Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 });
-    const sacas = (e) => e.sacas == null ? '' : `${fmtN(e.sacas)} sacas · ${fmtN(e.toneladas, 1)} t`;
-    const soja = r.referencias.soja || {}, milho = r.referencias.milho || {};
+    const sacas = (e) => e.toneladas == null ? '' : `${fmtN(e.toneladas, 1)} t`;
+    const soja = r.referencias.soja || {};
     $('#risco').innerHTML = [
-      ['alto', reais(r.eudr_fornecedores.reais), `soja de fornecedores Não conformes (${fmtN(r.eudr_fornecedores.ha)} ha) · ${sacas(r.eudr_fornecedores)}`],
+      ['alto', reais(r.eudr_fornecedores.reais), `produção de fornecedores Não conformes (${fmtN(r.eudr_fornecedores.ha)} ha) · ${sacas(r.eudr_fornecedores)}`],
       ['medio', reais(r.eudr_area_afetada.reais), `só nos hectares com ocorrência (${fmtN(r.eudr_area_afetada.ha)} ha) · ${sacas(r.eudr_area_afetada)}`],
-      ['medio', milho.preco_saca ? reais(r.renovabio_inelegivel.reais) : `${fmtN(r.renovabio_inelegivel.toneladas || 0, 1)} t`,
-        `de milho inelegível no RenovaBio (${fmtN(r.renovabio_inelegivel.ha)} ha) · ${sacas(r.renovabio_inelegivel)}`],
+      ['medio', reais(r.renovabio_inelegivel.reais),
+        `de grão inelegível no RenovaBio (${fmtN(r.renovabio_inelegivel.ha)} ha) · ${sacas(r.renovabio_inelegivel)}`],
     ].map(([c, n, t]) => `<div class="${c}"><b>${n}</b><small>${t}</small></div>`).join('');
-    const velho = soja.dias_do_preco != null && soja.dias_do_preco > 30 ? ` <b style="color:var(--warn)">(preço com ${soja.dias_do_preco} dias: atualizar)</b>` : '';
-    $('#ref-risco').innerHTML = `Referências: soja ${soja.preco_saca ? reais(soja.preco_saca) + '/saca' : 'sem preço'} em ${esc(soja.praca || '-')}` +
-      `${soja.data_preco ? ' (' + soja.data_preco.split('-').reverse().join('/') + ', ' + esc(soja.fonte_preco || '') + ')' : ''}${velho}; ` +
-      `produtividade ${fmtN(soja.produtividade_sc_ha)} sc/ha de soja e ${fmtN(milho.produtividade_sc_ha)} sc/ha de milho (${esc(soja.fonte_produtividade || '')}). ` +
+    const refs = Object.values(r.referencias).filter((x) => x.preco_saca);
+    const porCultura = Object.entries(r.por_cultura || {}).map(([c, e]) => `${esc((r.referencias[c] || {}).rotulo || c)}: ${reais(e.reais)}`).join(' · ');
+    $('#ref-risco').innerHTML = (porCultura ? `Não conformes por cultura: ${porCultura}.<br>` : '') +
+      'Referências: ' + refs.map((x) => `${esc(x.rotulo)} ${reais(x.preco_saca)}/${esc(x.unidade)} e ${fmtN(x.produtividade_sc_ha)} ${x.unidade.startsWith('arroba') ? '@' : 'sc'}/ha`).join('; ') +
+      `. Fontes: ${esc([...new Set(refs.map((x) => x.fonte_preco))].join('; '))}. ` +
       'Estimativa de ordem de grandeza: a área total do fornecedor inclui reserva e áreas não plantadas.';
     $('#bloco-risco').hidden = false;
   }

@@ -14,10 +14,11 @@ from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
 
 from . import carteira as cart
-from . import contas, convites, licencas, mercado, painel, tiles
+from . import contas, convites, licencas, mercado, observatorio, painel, tiles
 from .dependencias import admin, superadmin, usuario
 from .dependencias import ip as _ip
 from .rotas_admin import rotas as rotas_admin
+from .rotas_mercado import rotas as rotas_mercado
 from .rotas_publico import rotas as rotas_publico
 from .analise import ErroAnalise, analisar
 from .arquivos import ErroArquivo, ler_feicoes, ler_geometria
@@ -32,6 +33,7 @@ from .planilha import ErroPlanilha, ler_planilha
 @asynccontextmanager
 async def ciclo_de_vida(app: FastAPI):
     pool.open()
+    observatorio.aquecer(pool)
     yield
     pool.close()
 
@@ -42,6 +44,7 @@ app = FastAPI(title="GeoLEM API", version="0.3.0", lifespan=ciclo_de_vida,
 COOKIE = "geolem_sessao"
 app.include_router(rotas_publico)
 app.include_router(rotas_admin)
+app.include_router(rotas_mercado)
 
 # ---------- Acesso ----------
 # Sem login: a tela de entrada, os termos, o observatório (e suas rotas), a saúde do serviço e a verificação
@@ -483,6 +486,7 @@ def mapa_carteira(u: dict = Depends(usuario)):
 
 class PedidoArea(BaseModel):
     nome: str | None = Field(None, max_length=200)
+    cultura: str | None = Field(None, max_length=30)
     geometria: dict[str, Any] | None = None
     imovel_id: int | None = None
     fornecedor: str | None = Field(None, max_length=200)
@@ -497,7 +501,7 @@ def adicionar_area(p: PedidoArea, request: Request, u: dict = Depends(usuario)):
             area_id = cart.adicionar_area(conn, u["empresa_id"], u["id"], nome=p.nome, geometria=p.geometria,
                                           imovel_id=p.imovel_id, fornecedor=p.fornecedor,
                                           codigo_externo=p.codigo_externo, reserva_legal_ha=p.reserva_legal_ha,
-                                          origem="cadastro manual")
+                                          origem="cadastro manual", cultura=p.cultura)
         except cart.ErroCarteira as e:
             raise HTTPException(422, str(e)) from e
         contas.auditar(conn, "carteira_area", u, alvo=p.nome, ip=_ip(request))
@@ -540,6 +544,35 @@ def reanalisar(p: PedidoIds, request: Request, u: dict = Depends(usuario)):
         n = cart.enfileirar(conn, u["empresa_id"], ids, u["id"], "manual")
         contas.auditar(conn, "carteira_reanalise", u, detalhes={"areas": n}, ip=_ip(request))
     return {"na_fila": n}
+
+
+class AlteracaoArea(BaseModel):
+    cultura: str | None = Field(None, max_length=30)
+    fornecedor: str | None = Field(None, max_length=200)
+    codigo_externo: str | None = Field(None, max_length=100)
+
+
+@app.patch("/api/carteira/areas/{area_id}")
+def alterar_area(area_id: int, p: AlteracaoArea, u: dict = Depends(usuario)):
+    dados = p.model_dump(exclude_unset=True)
+    if "cultura" in dados:
+        try:
+            dados["cultura"] = mercado.normalizar_cultura(dados["cultura"])
+        except ValueError as e:
+            raise HTTPException(422, str(e)) from e
+    if not dados:
+        return {"ok": True}
+    with pool.connection() as conn:
+        n = conn.execute(f"UPDATE app.areas SET {', '.join(f'{k} = %s' for k in dados)} "
+                         "WHERE id = %s AND empresa_id = %s AND ativa", (*dados.values(), area_id, u["empresa_id"])).rowcount
+    if not n:
+        raise HTTPException(404, "Área não encontrada.")
+    return {"ok": True}
+
+
+@app.get("/api/culturas")
+def culturas():
+    return [{"id": k, "rotulo": v[0], "unidade": v[1]} for k, v in mercado.CULTURAS.items()]
 
 
 @app.delete("/api/carteira/areas/{area_id}")

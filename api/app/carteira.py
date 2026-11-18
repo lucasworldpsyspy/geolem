@@ -5,7 +5,7 @@ na área e, se a situação piorar em relação à análise anterior, cria um al
 """
 import json
 
-from . import licencas, regras
+from . import licencas, mercado, regras
 from .analise import ErroAnalise, analisar
 from .config import AREA_MAXIMA_HA
 from .imoveis import carregar_imovel, imovel_por_codigo
@@ -19,7 +19,7 @@ class ErroCarteira(ValueError):
 
 def adicionar_area(conn, empresa_id: int, usuario_id: int | None, *, nome: str | None, geometria: dict | None = None,
                    imovel_id: int | None = None, fornecedor: str | None = None, codigo_externo: str | None = None,
-                   reserva_legal_ha: float | None = None, origem: str | None = None) -> int:
+                   reserva_legal_ha: float | None = None, origem: str | None = None, cultura: str | None = None) -> int:
     """Cadastra a área e põe a primeira análise na fila. Usa a geometria do imóvel se só vier o id."""
     municipio = None
     if imovel_id is not None:
@@ -31,6 +31,10 @@ def adicionar_area(conn, empresa_id: int, usuario_id: int | None, *, nome: str |
         municipio = f"{im['municipio']}/{im['uf']}" if im["municipio"] and im["uf"] else im["municipio"]
         if reserva_legal_ha is None:
             reserva_legal_ha = im["reserva_legal_ha"]
+    try:
+        cultura = mercado.normalizar_cultura(cultura)
+    except ValueError as e:
+        raise ErroCarteira(str(e)) from e
     if not geometria:
         raise ErroCarteira("Informe a geometria da área ou o imóvel.")
     try:
@@ -54,11 +58,11 @@ def adicionar_area(conn, empresa_id: int, usuario_id: int | None, *, nome: str |
 
     area_id = conn.execute(
         """INSERT INTO app.areas (empresa_id, nome, fornecedor, codigo_externo, imovel_id, municipio, reserva_legal_ha,
-                                  origem, area_ha, geom, criado_por)
-           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, geo.normalizar(ST_GeomFromGeoJSON(%s)), %s) RETURNING id""",
+                                  origem, area_ha, geom, criado_por, cultura)
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, geo.normalizar(ST_GeomFromGeoJSON(%s)), %s, %s) RETURNING id""",
         (empresa_id, (nome or "Área sem nome")[:200], (fornecedor or None) and fornecedor[:200],
          (codigo_externo or None) and codigo_externo[:100], imovel_id, municipio, reserva_legal_ha, origem,
-         linha["ha"], json.dumps(geometria), usuario_id),
+         linha["ha"], json.dumps(geometria), usuario_id, cultura),
     ).fetchone()["id"]
     enfileirar(conn, empresa_id, [area_id], usuario_id, "cadastro")
     return area_id
@@ -81,7 +85,7 @@ def importar_planilha(conn, empresa_id: int, usuario_id: int, linhas: list[dict]
             with conn.transaction():
                 adicionar_area(conn, empresa_id, usuario_id, nome=l.get("nome"), imovel_id=im["id"],
                                fornecedor=l.get("fornecedor"), codigo_externo=l.get("codigo_externo"),
-                               reserva_legal_ha=l.get("reserva_legal_ha"), origem=origem)
+                               reserva_legal_ha=l.get("reserva_legal_ha"), origem=origem, cultura=l.get("cultura"))
             importadas += 1
         except ErroCarteira as e:
             ignoradas.append({"linha": l["linha"], "motivo": str(e)})
@@ -94,7 +98,8 @@ def importar_feicoes(conn, empresa_id: int, usuario_id: int, feicoes: list[dict]
         try:
             with conn.transaction():
                 adicionar_area(conn, empresa_id, usuario_id, nome=f["nome"], geometria=f["geometria"],
-                               fornecedor=f.get("fornecedor"), codigo_externo=f.get("codigo_externo"), origem=origem)
+                               fornecedor=f.get("fornecedor"), codigo_externo=f.get("codigo_externo"), origem=origem,
+                               cultura=f.get("cultura"))
             importadas += 1
         except (ErroCarteira, Exception) as e:  # geometria inválida não derruba o lote
             ignoradas.append({"linha": f["linha"], "motivo": str(e)[:200]})
@@ -187,7 +192,7 @@ def resumo_carteira(conn, empresa_id: int) -> dict:
 
 def listar_areas(conn, empresa_id: int) -> list[dict]:
     linhas = conn.execute(
-        """SELECT a.id, a.nome, a.fornecedor, a.codigo_externo, a.municipio, round(a.area_ha::numeric, 2) AS area_ha,
+        """SELECT a.id, a.nome, a.fornecedor, a.codigo_externo, a.municipio, a.cultura, round(a.area_ha::numeric, 2) AS area_ha,
                   a.ultimo_status, a.status_anterior, a.ultimo_protocolo, a.analisado_em, a.origem, a.criado_em,
                   t.estado AS fila, t.erro AS erro,
                   CASE WHEN cv.aceito_em IS NOT NULL THEN 'aceito' WHEN cv.id IS NOT NULL THEN 'enviado' END AS convite

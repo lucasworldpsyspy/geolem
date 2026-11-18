@@ -87,6 +87,26 @@ def enviar_boletins(conn) -> int:
     return enviados
 
 
+def aviso_interesse(conn, lote_id: int) -> bool:
+    """Avisa os administradores da empresa vendedora que alguém se interessou por um lote (sem identificar o comprador)."""
+    if not SMTP["host"]:
+        return False
+    l = conn.execute("SELECT empresa_id, cultura, safra, volume_t FROM app.lotes WHERE id = %s", (lote_id,)).fetchone()
+    destinos = [r["email"] for r in conn.execute(
+        "SELECT email FROM app.usuarios WHERE empresa_id = %s AND papel = 'admin' AND ativo", (l["empresa_id"],)).fetchall()]
+    if not destinos:
+        return False
+    msg = EmailMessage()
+    msg["Subject"] = f"GeoLEM: novo interesse no seu lote de {l['cultura']} ({l['safra']})"
+    msg["From"] = formataddr(("GeoLEM", SMTP["remetente"]))
+    msg["To"] = ", ".join(destinos)
+    msg.set_content(f"Uma empresa demonstrou interesse no seu lote de {float(l['volume_t']):,.0f} t de {l['cultura']} "
+                    f"(safra {l['safra']}).\n\nResponda em {URL_PUBLICA}/mercado.html#meus. O contato do comprador "
+                    "aparece quando você aceitar.\n\nEste é um aviso automático do GeoLEM.".replace(",", "."))
+    _enviar(msg)
+    return True
+
+
 def enviar_resumos(conn) -> int:
     if not SMTP["host"]:
         return 0

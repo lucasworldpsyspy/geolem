@@ -55,14 +55,14 @@ def test_planilha_csv_ponto_e_virgula_cp1252():
            ";Sem código;;;\n").encode("cp1252")
     linhas = ler_planilha("carteira.csv", csv)
     assert linhas[0] == {"linha": 2, "codigo": "abc-123", "nome": "Fazenda São João", "fornecedor": "José",
-                         "codigo_externo": "F10", "reserva_legal_ha": 1234.5}
+                         "codigo_externo": "F10", "cultura": None, "reserva_legal_ha": 1234.5}
     assert linhas[1]["codigo"] is None
 
 
 def test_planilha_csv_virgula_utf8_com_bom():
     linhas = ler_planilha("c.csv", "﻿sigef,nome\nxyz,Boa Vista\n".encode("utf-8"))
     assert linhas == [{"linha": 2, "codigo": "xyz", "nome": "Boa Vista", "fornecedor": None, "codigo_externo": None,
-                       "reserva_legal_ha": None}]
+                       "cultura": None, "reserva_legal_ha": None}]
 
 
 def test_planilha_xlsx():

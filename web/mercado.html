@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mercado · GeoLEM</title>
+  <link rel="icon" href="/marca.svg">
+  <link rel="stylesheet" href="/estilo.css">
+  <style>
+    .abas { display: flex; gap: 6px; flex-wrap: wrap; }
+    .abas button[aria-selected="true"] { background: var(--marca); border-color: var(--marca); color: var(--marca-tinta); font-weight: 600; }
+    .filtros { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+    .filtros select, .filtros input[type=search] { width: auto; min-width: 180px; }
+    .filtros label.check { display: flex; gap: 6px; align-items: center; font-size: 13px; color: var(--suave); }
+    .lotes { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; }
+    .lote { background: var(--painel); border: 1px solid var(--borda); border-radius: 12px; padding: 16px; display: flex; flex-direction: column; gap: 8px; }
+    .lote .topo-lote { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+    .lote h3 { margin: 0; font-size: 18px; }
+    .lote .vol { font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums; }
+    .lote dl { display: grid; grid-template-columns: auto 1fr; gap: 3px 10px; margin: 0; font-size: 13px; }
+    .lote dt { color: var(--suave); } .lote dd { margin: 0; }
+    .lote .verif { border-top: 1px solid var(--borda); padding-top: 8px; font-size: 12.5px; color: var(--suave); }
+    .lote .verif b { color: var(--texto); }
+    .preco-dif { font-size: 12px; color: var(--suave); }
+    .grade-form { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .grade-form .largo { grid-column: 1 / -1; }
+    textarea, input[type=number], input[type=date] { color: var(--texto); background: var(--bg); border: 1px solid var(--borda); border-radius: 8px; padding: 9px 11px; width: 100%; font: inherit; }
+    .interesse { border-left: 3px solid var(--borda); padding: 6px 10px; margin-top: 6px; font-size: 13px; }
+    .interesse.aceito, .interesse.fechado { border-color: var(--ok); } .interesse.recusado { border-color: var(--bad); opacity: .7; }
+    @media (max-width: 760px) { .grade-form { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <header class="barra" data-pagina="mercado"></header>
+  <main class="pagina">
+    <div class="cabecalho">
+      <div>
+        <h1>Mercado de lotes verificados</h1>
+        <p>Grão com origem socioambiental verificada pelo GeoLEM. Só entram lotes de áreas analisadas nos últimos 90 dias e sem resultado Não conforme.
+          O contato entre vendedor e comprador é liberado quando o vendedor aceita o interesse.</p>
+      </div>
+    </div>
+    <div class="abas" role="tablist">
+      <button class="btn" role="tab" data-aba="disponiveis" aria-selected="true" type="button">Lotes disponíveis</button>
+      <button class="btn" role="tab" data-aba="meus" aria-selected="false" type="button">Meus lotes</button>
+      <button class="btn" role="tab" data-aba="interesses" aria-selected="false" type="button">Meus interesses</button>
+    </div>
+
+    <section data-painel="disponiveis">
+      <div class="filtros" style="margin-bottom:14px">
+        <select id="f-cultura" aria-label="Cultura"><option value="">Todas as culturas</option></select>
+        <input id="f-municipio" type="search" placeholder="Município" aria-label="Município">
+        <label class="check"><input id="f-ok" type="checkbox"> Só Conformes</label>
+        <label class="check"><input id="f-rb" type="checkbox"> Elegível no RenovaBio</label>
+      </div>
+      <div class="lotes" id="lotes"><p class="aviso">Carregando…</p></div>
+    </section>
+
+    <section data-painel="meus" hidden>
+      <div class="caixa" style="margin-bottom:16px">
+        <h2>Anunciar um lote</h2>
+        <form id="form-lote" class="grade-form" novalidate>
+          <label class="campo largo">Área da sua carteira (a verificação do GeoLEM acompanha o lote)
+            <select id="l-area" required></select></label>
+          <label class="campo">Safra <input id="l-safra" type="text" maxlength="20" placeholder="2025/26" required></label>
+          <label class="campo">Volume (toneladas) <input id="l-volume" type="number" min="1" step="1" required></label>
+          <label class="campo">Preço pedido (R$ por unidade, opcional) <input id="l-preco" type="number" min="0" step="0.01" placeholder="a combinar"></label>
+          <label class="campo">Disponível até <input id="l-ate" type="date"></label>
+          <label class="campo largo">Entrega <input id="l-entrega" type="text" maxlength="120" placeholder="Ex.: FOB fazenda, armazém em LEM"></label>
+          <label class="campo largo">Observações <textarea id="l-obs" maxlength="1000" rows="2"></textarea></label>
+          <p class="erro largo" id="erro-lote" hidden></p>
+          <div class="largo"><button class="btn btn-primario" type="submit">Anunciar lote</button></div>
+        </form>
+      </div>
+      <div id="meus-lotes"></div>
+    </section>
+
+    <section data-painel="interesses" hidden>
+      <div id="meus-interesses"></div>
+    </section>
+  </main>
+
+  <dialog id="dlg-interesse">
+    <form id="form-interesse" novalidate>
+      <h3 id="titulo-interesse">Tenho interesse</h3>
+      <p class="aviso">O vendedor recebe seu interesse sem ver o nome da sua empresa. Se ele aceitar, os dois lados passam a ver o contato um do outro.</p>
+      <label class="campo">Volume desejado (t, opcional) <input id="i-volume" type="number" min="1" step="1"></label>
+      <label class="campo">Mensagem (opcional) <textarea id="i-msg" maxlength="1000" rows="3" placeholder="Ex.: interesse em retirada em março; preço a combinar"></textarea></label>
+      <p class="erro" id="erro-interesse" hidden></p>
+      <div class="botoes" style="justify-content:flex-end">
+        <button class="btn" type="button" onclick="this.closest('dialog').close()">Cancelar</button>
+        <button class="btn btn-primario" type="submit">Enviar interesse</button>
+      </div>
+    </form>
+  </dialog>
+
+  <p class="rodape"><a href="/termos.html">Termos de uso</a> · <a href="/privacidade.html">Privacidade</a></p>
+<script src="/conta.js"></script>
+<script>
+  const $ = (s) => document.querySelector(s);
+  const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const fmtN = (v, c = 0) => Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: c, maximumFractionDigits: c });
+  const reais = (v) => v == null ? 'a combinar' : Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  const dataBR = (iso) => iso ? iso.slice(0, 10).split('-').reverse().join('/') : '-';
+  const SITU = { enviado: 'Enviado', aceito: 'Aceito: contato liberado', recusado: 'Recusado', fechado: 'Negócio fechado', cancelado: 'Cancelado' };
+  async function api(url, opcoes = {}) {
+    const r = await fetch(url, { ...opcoes, headers: { 'Content-Type': 'application/json' } });
+    if (r.status === 401) { location.href = '/entrar.html?volta=/mercado.html'; throw new Error('sessão expirada'); }
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(typeof d.detail === 'string' ? d.detail : `Erro ${r.status}`);
+    return d;
+  }
+
+  // ---------- abas ----------
+  function abrir(id) {
+    document.querySelectorAll('[data-aba]').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.aba === id)));
+    document.querySelectorAll('[data-painel]').forEach((p) => { p.hidden = p.dataset.painel !== id; });
+    ({ disponiveis: carregarLotes, meus: carregarMeus, interesses: carregarMeus })[id]();
+    history.replaceState(null, '', '#' + id);
+  }
+  document.querySelectorAll('[data-aba]').forEach((b) => b.addEventListener('click', () => abrir(b.dataset.aba)));
+
+  // ---------- lotes disponíveis ----------
+  function selo(v) {
+    return `<div class="verif">Verificação GeoLEM: <span class="selo ${esc(v.status)}">${esc(v.rotulo)}</span>
+      ${v.renovabio ? ` · RenovaBio: <b>${esc(v.renovabio)}</b>` : ''}<br>
+      ${v.ocorrencias.length ? `Pontos de atenção: ${esc(v.ocorrencias.join('; '))}<br>` : ''}
+      Analisada em ${dataBR(v.analisado_em)}${v.protocolo ? ` · <a href="/api/analises/${encodeURIComponent(v.protocolo)}/laudo.pdf" target="_blank" rel="noopener">laudo</a>` : ''}</div>`;
+  }
+  function comparar(l) {
+    if (l.preco_pedido == null || !l.preco_referencia) return '';
+    const d = 100 * (l.preco_pedido / l.preco_referencia - 1);
+    return `<span class="preco-dif">${d >= 0 ? '+' : ''}${fmtN(d, 1)}% vs. referência de ${reais(l.preco_referencia)}</span>`;
+  }
+  async function carregarLotes() {
+    const q = new URLSearchParams();
+    if ($('#f-cultura').value) q.set('cultura', $('#f-cultura').value);
+    if ($('#f-municipio').value.trim()) q.set('municipio', $('#f-municipio').value.trim());
+    if ($('#f-ok').checked) q.set('so_conformes', 'true');
+    if ($('#f-rb').checked) q.set('renovabio', 'true');
+    const lista = await api('/api/mercado/lotes?' + q);
+    $('#lotes').innerHTML = lista.map((l) => `<article class="lote">
+      <div class="topo-lote"><h3>${esc(l.cultura_rotulo)} · safra ${esc(l.safra)}</h3>${l.meu ? '<span class="selo fila">seu lote</span>' : ''}</div>
+      <div class="vol">${fmtN(l.volume_t)} t</div>
+      <dl><dt>Município</dt><dd>${esc(l.municipio || '-')}</dd>
+        <dt>Preço pedido</dt><dd>${reais(l.preco_pedido)}${l.preco_pedido != null ? ' / ' + esc(l.unidade) : ''} ${comparar(l)}</dd>
+        <dt>Entrega</dt><dd>${esc(l.entrega || 'a combinar')}</dd>
+        <dt>Disponível até</dt><dd>${dataBR(l.disponivel_ate)}</dd>
+        ${l.observacoes ? `<dt>Obs.</dt><dd>${esc(l.observacoes)}</dd>` : ''}</dl>
+      ${selo(l.verificacao)}
+      ${l.meu ? '' : l.meu_interesse ? `<p class="aviso">Seu interesse: <b>${esc(SITU[l.meu_interesse] || l.meu_interesse)}</b></p>`
+        : `<button class="btn btn-primario" data-interesse="${l.id}" data-titulo="${esc(l.cultura_rotulo)} · ${fmtN(l.volume_t)} t" type="button">Tenho interesse</button>`}
+    </article>`).join('') || '<p class="aviso">Nenhum lote com esses filtros. Anuncie o seu na aba "Meus lotes".</p>';
+  }
+  ['#f-cultura', '#f-ok', '#f-rb'].forEach((s) => $(s).addEventListener('change', carregarLotes));
+  let espera; $('#f-municipio').addEventListener('input', () => { clearTimeout(espera); espera = setTimeout(carregarLotes, 350); });
+
+  let loteAtual = null;
+  $('#lotes').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-interesse]');
+    if (!b) return;
+    loteAtual = b.dataset.interesse;
+    $('#titulo-interesse').textContent = `Tenho interesse: ${b.dataset.titulo}`;
+    $('#form-interesse').reset(); $('#erro-interesse').hidden = true;
+    $('#dlg-interesse').showModal();
+  });
+  $('#form-interesse').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    try {
+      await api(`/api/mercado/lotes/${loteAtual}/interesse`, { method: 'POST', body: JSON.stringify({
+        volume_t: $('#i-volume').value ? Number($('#i-volume').value) : null, mensagem: $('#i-msg').value.trim() || null }) });
+      $('#dlg-interesse').close(); carregarLotes();
+    } catch (err) { $('#erro-interesse').textContent = err.message; $('#erro-interesse').hidden = false; }
+  });
+
+  // ---------- meus lotes e interesses ----------
+  async function carregarMeus() {
+    const [d, cart] = await Promise.all([api('/api/mercado/meus'), api('/api/carteira')]);
+    const elegiveis = cart.areas.filter((a) => a.ultimo_status && a.ultimo_status !== 'bad');
+    $('#l-area').innerHTML = elegiveis.map((a) => `<option value="${a.id}">${esc(a.nome)} · ${esc(a.cultura)} · ${fmtN(a.area_ha)} ha · ${a.ultimo_status === 'ok' ? 'Conforme' : 'Atenção'}</option>`).join('')
+      || '<option value="">Nenhuma área analisada sem Não conforme na sua carteira</option>';
+    $('#meus-lotes').innerHTML = d.lotes.map((l) => `<div class="caixa" style="margin-bottom:12px">
+      <div class="cabecalho"><div><b>${esc(l.cultura_rotulo)} · safra ${esc(l.safra)} · ${fmtN(l.volume_t)} t</b><br>
+        <span class="aviso">${esc(l.municipio || '')} · ${reais(l.preco_pedido)} · situação: ${esc(l.situacao)}</span></div>
+        <div class="botoes">${['ativo', 'negociando'].includes(l.situacao) ? `<button class="btn btn-peq" data-lote="${l.id}" data-situacao="vendido" type="button">Marcar vendido</button>
+          <button class="btn btn-peq btn-perigo" data-lote="${l.id}" data-situacao="cancelado" type="button">Retirar</button>` : ''}</div></div>
+      ${l.interesses.map((i) => `<div class="interesse ${esc(i.situacao)}">
+        <b>${i.contato ? esc(i.contato.empresa) : 'Comprador verificado'}</b> · ${i.volume_t ? fmtN(i.volume_t) + ' t · ' : ''}${esc(SITU[i.situacao] || i.situacao)} · ${dataBR(i.criado_em)}
+        ${i.mensagem ? `<br>“${esc(i.mensagem)}”` : ''}
+        ${i.contato ? `<br>Contato: ${esc(i.contato.nome || '')} · ${esc(i.contato.email || '')} ${esc(i.contato.telefone || '')}` : ''}
+        <div class="botoes" style="margin-top:6px">${i.situacao === 'enviado' ? `<button class="btn btn-peq btn-primario" data-resp="${i.id}" data-acao="aceitar" type="button">Aceitar e liberar contato</button>
+          <button class="btn btn-peq" data-resp="${i.id}" data-acao="recusar" type="button">Recusar</button>` : ''}
+          ${i.situacao === 'aceito' ? `<button class="btn btn-peq" data-resp="${i.id}" data-acao="fechar" type="button">Registrar negócio fechado</button>` : ''}</div></div>`).join('')
+        || '<p class="aviso">Nenhum interesse ainda.</p>'}</div>`).join('') || '<p class="aviso">Você ainda não anunciou lotes.</p>';
+    $('#meus-interesses').innerHTML = d.interesses_enviados.map((i) => `<div class="interesse ${esc(i.situacao)}">
+      <b>${esc(i.cultura)} · safra ${esc(i.safra)} · ${fmtN(i.volume_lote)} t · ${esc(i.municipio || '')}</b><br>
+      ${esc(SITU[i.situacao] || i.situacao)} · enviado em ${dataBR(i.criado_em)}
+      ${i.contato ? `<br>Vendedor: <b>${esc(i.contato.empresa)}</b> · ${esc(i.contato.nome || '')} · ${esc(i.contato.email || '')} ${esc(i.contato.telefone || '')}` : ''}</div>`).join('')
+      || '<p class="aviso">Você ainda não manifestou interesse em nenhum lote.</p>';
+  }
+  $('#meus-lotes').addEventListener('click', async (e) => {
+    const s = e.target.closest('[data-situacao]'), r = e.target.closest('[data-resp]');
+    try {
+      if (s && confirm('Confirmar?')) await api(`/api/mercado/lotes/${s.dataset.lote}`, { method: 'PATCH', body: JSON.stringify({ situacao: s.dataset.situacao }) });
+      if (r) {
+        const corpo = { acao: r.dataset.acao };
+        if (r.dataset.acao === 'fechar') {
+          const v = prompt('Volume fechado (t):'); if (v === null) return;
+          const p = prompt('Preço fechado (R$ por unidade, opcional):', '');
+          corpo.volume_t = Number(v) || null; corpo.preco = p ? Number(p.replace(',', '.')) : null;
+        }
+        await api(`/api/mercado/interesses/${r.dataset.resp}/responder`, { method: 'POST', body: JSON.stringify(corpo) });
+      }
+      carregarMeus();
+    } catch (err) { alert(err.message); }
+  });
+  $('#form-lote').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const erro = $('#erro-lote'); erro.hidden = true;
+    try {
+      await api('/api/mercado/lotes', { method: 'POST', body: JSON.stringify({
+        area_id: Number($('#l-area').value), safra: $('#l-safra').value.trim(), volume_t: Number($('#l-volume').value),
+        preco_pedido: $('#l-preco').value ? Number($('#l-preco').value) : null, disponivel_ate: $('#l-ate').value || null,
+        entrega: $('#l-entrega').value.trim() || null, observacoes: $('#l-obs').value.trim() || null }) });
+      e.target.reset(); carregarMeus();
+    } catch (err) { erro.textContent = err.message; erro.hidden = false; }
+  });
+
+  fetch('/api/culturas').then((r) => r.json()).then((cs) => {
+    $('#f-cultura').innerHTML += cs.map((c) => `<option value="${c.id}">${esc(c.rotulo)}</option>`).join('');
+  });
+  const inicial = (location.hash || '').slice(1);
+  abrir(['disponiveis', 'meus', 'interesses'].includes(inicial) ? inicial : 'disponiveis');
+</script>
+</body>
+</html>

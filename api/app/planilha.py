@@ -18,6 +18,7 @@ SINONIMOS = {
     "fornecedor": ("fornecedor", "produtor", "proprietario"),
     "codigo_externo": ("codigo_externo", "codigo_erp", "cod_fornecedor", "codigo_fornecedor"),
     "reserva_legal_ha": ("reserva_legal_ha", "reserva_legal", "rl_ha", "rl"),
+    "cultura": ("cultura", "commodity", "produto", "lavoura"),
 }
 MAX_LINHAS = 5000
 
@@ -92,7 +93,7 @@ def ler_planilha(nome_arquivo: str, conteudo: bytes) -> list[dict]:
             v = l[i] if i is not None and i < len(l) else None
             return str(v).strip() if v not in (None, "") else None
         item = {"linha": n, "codigo": campo("codigo"), "nome": campo("nome"), "fornecedor": campo("fornecedor"),
-                "codigo_externo": campo("codigo_externo")}
+                "codigo_externo": campo("codigo_externo"), "cultura": campo("cultura")}
         try:
             item["reserva_legal_ha"] = _numero(campo("reserva_legal_ha"))
         except ErroPlanilha as e:

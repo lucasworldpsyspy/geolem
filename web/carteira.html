@@ -78,10 +78,10 @@
       <div class="tabela-wrap">
         <table>
           <thead><tr>
-            <th>Área / fornecedor</th><th>Código ERP</th><th>Município</th><th class="num">Área (ha)</th>
+            <th>Área / fornecedor</th><th>Cultura</th><th>Código ERP</th><th>Município</th><th class="num">Área (ha)</th>
             <th>Situação</th><th>Última análise</th><th></th>
           </tr></thead>
-          <tbody id="linhas"><tr><td colspan="7" class="vazio">Carregando…</td></tr></tbody>
+          <tbody id="linhas"><tr><td colspan="8" class="vazio">Carregando…</td></tr></tbody>
         </table>
       </div>
     </section>
@@ -92,8 +92,9 @@
       <h3>Importar áreas para a carteira</h3>
       <p class="aviso">Duas formas, no mesmo botão:</p>
       <p style="margin:0"><b>Planilha (CSV ou Excel)</b> com o código SIGEF ou CAR de cada imóvel. Colunas aceitas:</p>
-      <div class="modelo">codigo;nome;fornecedor;codigo_erp;reserva_legal_ha
-5ba5ff8d-08e2-475c-9c8d-9f4df9414761;Fazenda Boa Vista;João Silva;F1023;610</div>
+      <div class="modelo">codigo;nome;fornecedor;codigo_erp;reserva_legal_ha;cultura
+5ba5ff8d-08e2-475c-9c8d-9f4df9414761;Fazenda Boa Vista;João Silva;F1023;610;soja</div>
+      <p class="aviso" style="margin:0">Cultura: soja, milho, sorgo, algodão ou café (vazio = soja).</p>
       <p style="margin:0"><b>Arquivo geográfico</b> (KML, KMZ, Shapefile em .zip, GeoJSON ou GPKG): cada polígono vira uma área.
         Os atributos <i>nome</i>, <i>fornecedor</i> e <i>codigo_erp</i> são aproveitados se existirem.</p>
       <label class="zona" id="zona">
@@ -131,6 +132,7 @@
   const fmtN = (v, c = 0) => Number(v).toLocaleString('pt-BR', { minimumFractionDigits: c, maximumFractionDigits: c });
   const fmtData = (iso) => iso ? new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '-';
   let dados = { resumo: {}, areas: [] };
+  const CULTURAS = [['soja', 'Soja'], ['milho', 'Milho'], ['sorgo', 'Sorgo'], ['algodao', 'Algodão'], ['cafe', 'Café']];
   let filtro = '';
   let temporizador;
 
@@ -189,11 +191,12 @@
     });
     $('#contagem').textContent = `${fmtN(linhas.length)} de ${fmtN(dados.areas.length)} áreas`;
     if (!dados.areas.length) {
-      $('#linhas').innerHTML = '<tr><td colspan="7" class="vazio">Sua carteira está vazia. Use <b>Importar áreas</b> para subir a lista de fornecedores, ou adicione áreas pela tela de Análise.</td></tr>';
+      $('#linhas').innerHTML = '<tr><td colspan="8" class="vazio">Sua carteira está vazia. Use <b>Importar áreas</b> para subir a lista de fornecedores, ou adicione áreas pela tela de Análise.</td></tr>';
       return;
     }
     $('#linhas').innerHTML = linhas.map((a) => `<tr>
       <td><b>${esc(a.nome)}</b><small>${esc(a.fornecedor || '')}</small></td>
+      <td><select class="sel-cultura" data-cultura="${a.id}" aria-label="Cultura da área" style="padding:4px 6px;width:auto">${CULTURAS.map(([k, r]) => `<option value="${k}"${k === a.cultura ? ' selected' : ''}>${r}</option>`).join('')}</select></td>
       <td>${esc(a.codigo_externo || '-')}</td>
       <td>${esc(a.municipio || '-')}</td>
       <td class="num">${a.area_ha != null ? fmtN(a.area_ha, 1) : '-'}</td>
@@ -204,7 +207,7 @@
         <button class="btn btn-peq" data-convidar="${a.id}" data-nome="${esc(a.nome)}" type="button" title="Convidar o produtor desta área">${a.convite === 'aceito' ? '✓ Produtor' : a.convite === 'enviado' ? '✉ Convidado' : '✉ Convidar'}</button>
         <button class="btn btn-peq" data-reanalisar="${a.id}" type="button" title="Reanalisar agora">↻</button>
         <button class="btn btn-peq btn-perigo" data-remover="${a.id}" data-nome="${esc(a.nome)}" type="button" title="Remover da carteira">✕</button>
-      </div></td></tr>`).join('') || '<tr><td colspan="7" class="vazio">Nenhuma área com esse filtro.</td></tr>';
+      </div></td></tr>`).join('') || '<tr><td colspan="8" class="vazio">Nenhuma área com esse filtro.</td></tr>';
   }
 
   async function carregarAlertas() {
@@ -224,6 +227,13 @@
     desenharTabela();
   }));
   $('#filtro-texto').addEventListener('input', desenharTabela);
+
+  $('#linhas').addEventListener('change', async (e) => {
+    const s = e.target.closest('[data-cultura]');
+    if (!s) return;
+    try { await api(`/api/carteira/areas/${s.dataset.cultura}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ cultura: s.value }) }); }
+    catch (err) { alert(err.message); }
+  });
 
   // Ações por linha
   $('#linhas').addEventListener('click', async (e) => {
@@ -302,7 +312,7 @@
   });
 
   $('#convite-copiar').addEventListener('click', () => navigator.clipboard.writeText($('#convite-msg').value));
-  carregar().catch((err) => { $('#linhas').innerHTML = `<tr><td colspan="7" class="vazio">${esc(err.message)}</td></tr>`; });
+  carregar().catch((err) => { $('#linhas').innerHTML = `<tr><td colspan="8" class="vazio">${esc(err.message)}</td></tr>`; });
 </script>
 </body>
 </html>

@@ -7,6 +7,7 @@
   <meta name="description" content="Desmatamento, alertas e conformidade socioambiental dos imóveis rurais do oeste da Bahia, com dados oficiais do INPE, IBAMA e INCRA.">
   <link rel="icon" href="/marca.svg">
   <link rel="stylesheet" href="/estilo.css">
+  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
   <style>
     .topo-pub { display: flex; align-items: center; gap: 16px; padding: 14px 24px; border-bottom: 1px solid var(--borda); background: var(--painel); }
     .topo-pub .marca { display: flex; align-items: center; gap: 9px; font-weight: 700; font-size: 17px; color: var(--texto); text-decoration: none; }
@@ -36,6 +37,23 @@
     .resultado-consulta ul { margin: 8px 0 0; padding-left: 18px; }
     .fontes { font-size: 12.5px; color: var(--suave); }
     td.pct { font-weight: 700; }
+    .financeiro { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 14px; }
+    .fin { background: var(--painel); border: 1px solid var(--borda); border-radius: var(--raio); padding: 16px 18px; }
+    .fin .n { font-size: 30px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.1; }
+    .fin .n.alerta { color: #ff8a80; }
+    .fin .t { color: #cfdad3; font-size: 13.5px; margin-top: 6px; }
+    .mapa-wrap { display: grid; grid-template-columns: 1fr 300px; gap: 16px; }
+    #mapa { height: 520px; border-radius: 10px; overflow: hidden; }
+    .metricas { display: flex; flex-direction: column; gap: 6px; }
+    .metricas button { text-align: left; }
+    .metricas button[aria-pressed="true"] { background: var(--marca); border-color: var(--marca); color: var(--marca-tinta); font-weight: 600; }
+    .legenda { margin-top: 12px; font-size: 12.5px; color: var(--suave); }
+    .legenda .escala { display: flex; height: 12px; border-radius: 6px; overflow: hidden; margin: 6px 0 4px; }
+    .legenda .escala span { flex: 1; }
+    .legenda .faixa { display: flex; justify-content: space-between; }
+    .maplibregl-popup-content { background: #fff; color: #1a1a1a; font: 13px/1.45 system-ui, sans-serif; border-radius: 8px; }
+    .maplibregl-popup-content strong { display: block; font-size: 14px; margin-bottom: 4px; }
+    @media (max-width: 900px) { .mapa-wrap { grid-template-columns: 1fr; } }
     @media (max-width: 900px) { .grade-2, .cta, .duas { grid-template-columns: 1fr; } }
   </style>
 </head>
@@ -57,6 +75,43 @@
   </section>
 
   <main class="pagina">
+    <section id="secao-financeiro" hidden>
+      <h2>Economia e risco</h2>
+      <div class="financeiro" id="financeiro"></div>
+      <p class="aviso" style="margin-top:8px" id="nota-financeiro"></p>
+    </section>
+
+    <section class="caixa" id="secao-vitrine" hidden style="border-color:var(--marca)">
+      <h2>Mercado de lotes de origem verificada</h2>
+      <p id="vitrine" style="margin:0;color:#cfdad3"></p>
+      <p class="aviso" style="margin-top:8px">Cooperativas, armazéns e produtores anunciam grão de áreas verificadas pelo GeoLEM; compradores filtram por conformidade e RenovaBio.
+        <a href="/entrar.html?volta=/mercado.html">Entrar no mercado</a> · <a href="#acao">Quero participar</a></p>
+    </section>
+
+    <section class="caixa" id="secao-mapa" hidden>
+      <h2>Mapa da região</h2>
+      <div class="mapa-wrap">
+        <div id="mapa" role="img" aria-label="Mapa coroplético dos municípios com o indicador selecionado"></div>
+        <div>
+          <div class="metricas" id="metricas" role="group" aria-label="Indicador do mapa"></div>
+          <div class="legenda" id="legenda"></div>
+          <p class="aviso" style="margin-top:14px">Clique num município para ver os números. Quer saber a situação de uma fazenda? <a href="#acao">Consulte grátis</a>.</p>
+        </div>
+      </div>
+    </section>
+
+    <div class="grade-2" id="graficos-financeiros" hidden>
+      <section class="caixa">
+        <h2>Valor da produção por cultura (R$, IBGE/PAM)</h2>
+        <div class="grafico"><canvas id="g-culturas" aria-label="Valor da produção agrícola da região por cultura"></canvas></div>
+      </section>
+      <section class="caixa">
+        <h2>Valor da produção em áreas abertas após 2020</h2>
+        <div class="grafico"><canvas id="g-risco" aria-label="Valor anual estimado da produção em áreas desmatadas após o corte do EUDR, por município"></canvas></div>
+        <p class="aviso">Estimativa anual se as áreas abertas depois de 31/12/2020 forem cultivadas com soja (rendimento do município × preço médio regional).</p>
+      </section>
+    </div>
+
     <div class="grade-2">
       <section class="caixa">
         <h2>Desmatamento por ano (PRODES, hectares)</h2>
@@ -74,9 +129,9 @@
       <h2>Municípios</h2>
       <div class="tabela-wrap">
         <table>
-          <thead><tr><th>Município</th><th class="num">Imóveis SIGEF</th><th class="num">Com desmatamento após 2020</th>
-            <th class="num">% dos imóveis</th><th class="num">Alertas DETER 12 meses</th><th class="num">Embargos IBAMA</th></tr></thead>
-          <tbody id="municipios"><tr><td colspan="6" class="vazio">Carregando…</td></tr></tbody>
+          <thead><tr><th>Município</th><th class="num">Valor da produção</th><th class="num">Imóveis SIGEF</th><th class="num">Com desmatamento após 2020</th>
+            <th class="num">% dos imóveis</th><th class="num">Desmatado após 2020</th><th class="num">Alertas DETER 12 meses</th><th class="num">Embargos IBAMA</th></tr></thead>
+          <tbody id="municipios"><tr><td colspan="8" class="vazio">Carregando…</td></tr></tbody>
         </table>
       </div>
       <p class="aviso" style="margin-top:8px">Imóveis certificados no SIGEF (INCRA) com mais de 1 ha de desmatamento PRODES detectado depois de 31/12/2020.
@@ -143,6 +198,7 @@
   </main>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
 <script>
   const $ = (s) => document.querySelector(s);
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -199,12 +255,104 @@
         tooltip: { callbacks: { label: (c) => `${fmtN(c.raw)} ha · ${meses[c.dataIndex].alertas} alerta(s)` } } },
         scales: { y: { beginAtZero: true, ticks: { callback: (v) => fmtN(v) } } } } });
 
-    $('#municipios').innerHTML = d.municipios.map((m) => `<tr><td><b>${esc(m.municipio)}</b>${m.uf ? '/' + esc(m.uf) : ''}</td>
+    $('#municipios').innerHTML = d.municipios.map((m) => `<tr><td><b>${esc(m.municipio)}</b>${m.uf ? '/' + esc(m.uf) : ''}${m.pct_monitorado != null && m.pct_monitorado < 90 ? `<small>${m.pct_monitorado}% do território na área monitorada</small>` : ''}</td>
+      <td class="num">${m.vbp_total ? bi(m.vbp_total) : '-'}</td>
       <td class="num">${fmtN(m.imoveis)}</td><td class="num">${fmtN(m.pos2020)}</td>
-      <td class="num pct">${fmtN(m.pct_pos2020, 1)}%</td><td class="num">${fmtN(m.deter_ha)} ha</td><td class="num">${fmtN(m.embargos)}</td></tr>`).join('');
+      <td class="num pct">${fmtN(m.pct_pos2020, 1)}%</td><td class="num">${m.ha_desmat_pos2020 != null ? fmtN(m.ha_desmat_pos2020) + ' ha' : '-'}</td>
+      <td class="num">${fmtN(m.deter_ha)} ha</td><td class="num">${fmtN(m.embargos)}</td></tr>`).join('');
+    if (d.financeiro) financeiro(d.financeiro);
     $('#f-municipio').innerHTML = d.municipios.map((m) => m.municipio).sort((a, b) => a.localeCompare(b, 'pt-BR'))
       .map((m) => `<option>${esc(m)}</option>`).join('');
   }).catch(() => { $('#municipios').innerHTML = '<tr><td colspan="6" class="vazio">Não foi possível carregar os números agora.</td></tr>'; });
+
+  // ---------- economia, mapa e gráficos financeiros ----------
+  const ROTULO_CULTURA = { soja: 'Soja', algodao: 'Algodão', milho: 'Milho', cafe: 'Café', sorgo: 'Sorgo' };
+  function bi(v) {
+    if (v == null) return '-';
+    return v >= 1e9 ? `R$ ${fmtN(v / 1e9, 1)} bi` : v >= 1e6 ? `R$ ${fmtN(v / 1e6, 0)} mi` : `R$ ${fmtN(v / 1e3, 0)} mil`;
+  }
+  function financeiro(f) {
+    const culturas = Object.entries(f.vbp_por_cultura);
+    $('#financeiro').innerHTML = [
+      [bi(f.vbp_total), `valor da produção agrícola da região em ${f.ano_pam} (IBGE/PAM)`, false],
+      [`${fmtN(f.ha_desmat_pos2020)} ha`, 'desmatados depois de 31/12/2020, a data de corte do EUDR (PRODES)', true],
+      [bi(f.valor_risco_eudr), 'por ano: produção estimada nessas áreas, que não pode ir para a Europa', true],
+      [culturas.length ? `${fmtN(100 * culturas[0][1] / f.vbp_total, 0)}%` : '-', `do valor vem de ${ROTULO_CULTURA[culturas[0]?.[0]] || '-'}, cultura sujeita ao EUDR`, false],
+    ].map(([n, t, a]) => `<div class="fin"><div class="n ${a ? 'alerta' : ''}">${n}</div><div class="t">${t}</div></div>`).join('');
+    $('#nota-financeiro').textContent = 'Valor da produção: Produção Agrícola Municipal do IBGE. Desmatamento: PRODES Cerrado (INPE) na área monitorada pelo GeoLEM. Estimativas de ordem de grandeza.';
+    $('#secao-financeiro').hidden = false;
+    $('#graficos-financeiros').hidden = false;
+    const cores = { soja: '#4cc38a', algodao: '#5aa9e6', milho: '#f5a524', cafe: '#c08457', sorgo: '#b48ce6' };
+    new Chart($('#g-culturas'), { type: 'doughnut',
+      data: { labels: culturas.map(([k]) => ROTULO_CULTURA[k] || k), datasets: [{ data: culturas.map(([, v]) => v), backgroundColor: culturas.map(([k]) => cores[k] || '#8a9a90'), borderColor: '#141c18' }] },
+      options: { maintainAspectRatio: false, plugins: { legend: { position: 'right' }, tooltip: { callbacks: { label: (c) => `${c.label}: ${bi(c.raw)}` } } } } });
+    const risco = f.municipios.filter((m) => m.valor_risco_eudr).sort((a, b) => b.valor_risco_eudr - a.valor_risco_eudr).slice(0, 10);
+    new Chart($('#g-risco'), { type: 'bar',
+      data: { labels: risco.map((m) => m.municipio), datasets: [{ data: risco.map((m) => m.valor_risco_eudr), backgroundColor: '#e5484d', borderRadius: 3 }] },
+      options: { indexAxis: 'y', maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => `${bi(c.raw)} por ano · ${fmtN(risco[c.dataIndex].ha_desmat_pos2020)} ha` } } },
+        scales: { x: { ticks: { callback: (v) => bi(v) } } } } });
+  }
+
+  const METRICAS = [
+    ['pct_pos2020', '% de imóveis com desmatamento após 2020', (v) => `${fmtN(v, 1)}%`],
+    ['ha_desmat_pos2020', 'Hectares desmatados após 2020', (v) => `${fmtN(v)} ha`],
+    ['valor_risco_eudr', 'Valor da produção em áreas pós-2020', (v) => bi(v)],
+    ['deter_ha', 'Alertas DETER nos últimos 12 meses (ha)', (v) => `${fmtN(v)} ha`],
+    ['vbp_total', 'Valor da produção agrícola (IBGE)', (v) => bi(v)],
+  ];
+  const ESCALA = ['#1b3a2d', '#2f6b4f', '#7a8f3c', '#d9a23a', '#e5484d'];
+  let mapa, geo, metrica = METRICAS[0];
+  function quebras(valores) {
+    const v = valores.filter((x) => x != null && x > 0).sort((a, b) => a - b);
+    if (!v.length) return [0, 0, 0, 0];
+    return [0.2, 0.4, 0.6, 0.8].map((q) => v[Math.floor(q * (v.length - 1))]);
+  }
+  function pintar() {
+    const q = quebras(geo.features.map((f) => f.properties[metrica[0]]));
+    const cor = ['case', ['!', ['to-boolean', ['get', metrica[0]]]], '#2a3830',
+      ['step', ['to-number', ['get', metrica[0]]], ESCALA[0], q[0], ESCALA[1], q[1], ESCALA[2], q[2], ESCALA[3], q[3], ESCALA[4]]];
+    mapa.setPaintProperty('mun-f', 'fill-color', cor);
+    $('#legenda').innerHTML = `<b>${esc(metrica[1])}</b><div class="escala">${ESCALA.map((c) => `<span style="background:${c}"></span>`).join('')}</div>
+      <div class="faixa"><span>menor</span><span>maior</span></div><p style="margin:6px 0 0">Cinco faixas com o mesmo número de municípios. Cinza: sem dado.</p>`;
+    document.querySelectorAll('[data-metrica]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.metrica === metrica[0])));
+  }
+  async function iniciarMapa() {
+    const r = await fetch('/api/publico/observatorio/mapa.geojson');
+    if (!r.ok) return;
+    geo = await r.json();
+    $('#secao-mapa').hidden = false;
+    $('#metricas').innerHTML = METRICAS.map(([k, t]) => `<button class="btn btn-peq" data-metrica="${k}" aria-pressed="false" type="button">${esc(t)}</button>`).join('');
+    $('#metricas').addEventListener('click', (e) => { const b = e.target.closest('[data-metrica]'); if (!b) return; metrica = METRICAS.find((m) => m[0] === b.dataset.metrica); pintar(); });
+    mapa = new maplibregl.Map({ container: 'mapa', attributionControl: { compact: true },
+      style: { version: 8, sources: { base: { type: 'raster', tileSize: 256, tiles: ['https://basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png'],
+        attribution: '© OpenStreetMap © CARTO · Malha municipal: IBGE' } }, layers: [{ id: 'base', type: 'raster', source: 'base' }] },
+      center: [-45.9, -12.0], zoom: 6.3 });
+    mapa.addControl(new maplibregl.NavigationControl({ showCompass: false }));
+    mapa.on('load', () => {
+      mapa.addSource('mun', { type: 'geojson', data: geo });
+      mapa.addLayer({ id: 'mun-f', type: 'fill', source: 'mun', paint: { 'fill-color': '#2a3830', 'fill-opacity': 0.78 } });
+      mapa.addLayer({ id: 'mun-l', type: 'line', source: 'mun', paint: { 'line-color': '#e7eee9', 'line-width': 0.8, 'line-opacity': 0.6 } });
+      const b = new maplibregl.LngLatBounds();
+      geo.features.forEach((f) => (f.geometry.type === 'Polygon' ? [f.geometry.coordinates] : f.geometry.coordinates).forEach((p) => p[0].forEach((c) => b.extend(c))));
+      mapa.fitBounds(b, { padding: 20, duration: 0 });
+      pintar();
+      mapa.on('click', 'mun-f', (e) => {
+        const p = e.features[0].properties;
+        new maplibregl.Popup().setLngLat(e.lngLat).setHTML(`<strong>${esc(p.municipio)}/${esc(p.uf)}</strong>` +
+          METRICAS.map(([k, t, f]) => `${esc(t)}: <b>${p[k] != null && p[k] !== 'null' ? f(Number(p[k])) : '-'}</b>`).join('<br>') +
+          (Number(p.pct_monitorado) < 90 ? `<br><small>${p.pct_monitorado}% do território na área monitorada</small>` : '')).addTo(mapa);
+      });
+      mapa.on('mouseenter', 'mun-f', () => { mapa.getCanvas().style.cursor = 'pointer'; });
+      mapa.on('mouseleave', 'mun-f', () => { mapa.getCanvas().style.cursor = ''; });
+    });
+  }
+  iniciarMapa();
+  fetch('/api/publico/mercado/resumo').then((r) => r.json()).then((m) => {
+    if (!m.lotes) return;
+    $('#vitrine').innerHTML = `<b style="font-size:22px;color:var(--texto)">${fmtN(m.volume_t)} t disponíveis</b> em ${m.lotes} lote(s): ` +
+      m.culturas.map((c) => `${esc(c.cultura)} ${fmtN(c.volume_t)} t`).join(' · ');
+    $('#secao-vitrine').hidden = false;
+  }).catch(() => {});
 
   $('#form-lead').addEventListener('submit', async (e) => {
     e.preventDefault();

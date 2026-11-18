@@ -406,3 +406,75 @@ CREATE TABLE IF NOT EXISTS app.convites (
   prospect_id        integer REFERENCES app.prospects(id)
 );
 CREATE INDEX IF NOT EXISTS convites_area_idx ON app.convites (area_id);
+
+-- =====================================================================
+-- Municípios (IBGE) e produção agrícola municipal (IBGE/PAM)
+-- =====================================================================
+CREATE TABLE IF NOT EXISTS geo.municipios (
+  id         bigserial PRIMARY KEY,
+  fonte      text NOT NULL,
+  carga_id   integer REFERENCES geo.cargas(id),
+  id_origem  text,            -- código IBGE (7 dígitos)
+  nome       text,
+  uf         text,
+  area_km2   double precision,
+  geom       geometry(MultiPolygon, 4326) NOT NULL
+);
+CREATE INDEX IF NOT EXISTS municipios_geom_idx ON geo.municipios USING gist (geom);
+
+CREATE TABLE IF NOT EXISTS geo.producao_municipal (
+  cod_ibge          text NOT NULL,
+  ano               integer NOT NULL,
+  produto           text NOT NULL,   -- total | soja | milho | algodao | cafe | sorgo
+  area_colhida_ha   double precision,
+  quantidade_t      double precision,
+  rendimento_kg_ha  double precision,
+  valor_mil_reais   double precision,
+  carga_id          integer REFERENCES geo.cargas(id),
+  PRIMARY KEY (cod_ibge, ano, produto)
+);
+
+-- Cultura de cada área da carteira (define preço e produtividade do valor em risco)
+ALTER TABLE app.areas ADD COLUMN IF NOT EXISTS cultura text NOT NULL DEFAULT 'soja';
+-- Unidade de preço por commodity (saca de 60 kg, arroba de 15 kg...)
+ALTER TABLE app.referencias_mercado ADD COLUMN IF NOT EXISTS unidade text NOT NULL DEFAULT 'saca 60 kg',
+                                    ADD COLUMN IF NOT EXISTS kg_por_unidade numeric(8, 2) NOT NULL DEFAULT 60;
+
+-- =====================================================================
+-- Mercado de lotes de origem verificada
+-- =====================================================================
+-- Um lote é grão disponível de uma área da carteira de quem anuncia, com a verificação do GeoLEM.
+-- O GeoLEM conecta vendedor e comprador; não opera pagamento, frete nem classificação.
+CREATE TABLE IF NOT EXISTS app.lotes (
+  id              bigserial PRIMARY KEY,
+  empresa_id      integer NOT NULL REFERENCES app.empresas(id),
+  area_id         bigint NOT NULL REFERENCES app.areas(id),
+  criado_por      integer,
+  cultura         text NOT NULL,
+  safra           text NOT NULL,                   -- ex.: 2025/26
+  volume_t        numeric(12, 2) NOT NULL,
+  preco_pedido    numeric(12, 2),                  -- R$ por unidade da cultura (opcional: "a combinar")
+  entrega         text,                            -- ex.: FOB fazenda, armazém em LEM
+  disponivel_ate  date,
+  observacoes     text,
+  situacao        text NOT NULL DEFAULT 'ativo',   -- ativo | negociando | vendido | cancelado
+  criado_em       timestamptz NOT NULL DEFAULT now(),
+  atualizado_em   timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS lotes_ativos_idx ON app.lotes (cultura) WHERE situacao IN ('ativo', 'negociando');
+
+CREATE TABLE IF NOT EXISTS app.interesses (
+  id                  bigserial PRIMARY KEY,
+  lote_id             bigint NOT NULL REFERENCES app.lotes(id) ON DELETE CASCADE,
+  empresa_id          integer NOT NULL REFERENCES app.empresas(id),   -- quem quer comprar
+  usuario_id          integer,
+  volume_t            numeric(12, 2),
+  mensagem            text,
+  situacao            text NOT NULL DEFAULT 'enviado',  -- enviado | aceito | recusado | fechado | cancelado
+  criado_em           timestamptz NOT NULL DEFAULT now(),
+  respondido_em       timestamptz,
+  fechado_em          timestamptz,
+  volume_fechado_t    numeric(12, 2),
+  preco_fechado       numeric(12, 2),
+  UNIQUE (lote_id, empresa_id)
+);

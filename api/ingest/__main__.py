@@ -13,6 +13,7 @@ from app.config import DATABASE_URL, REGIAO_BBOX
 
 from .carregar import carregar, conectar
 from .fontes import FONTES, mapbiomas_configurado
+from .pam import carregar_pam
 
 
 def main() -> int:
@@ -25,13 +26,14 @@ def main() -> int:
     if args.listar or not args.fontes:
         for f in FONTES.values():
             print(f"  {f.id:<22} {f.descricao}")
+        print(f"  {'pam_ibge':<22} Produção Agrícola Municipal (IBGE/PAM), depois dos municípios")
         return 0
 
-    ids = list(FONTES) if args.fontes == ["todas"] else args.fontes
+    ids = list(FONTES) + ["pam_ibge"] if args.fontes == ["todas"] else args.fontes
     if args.fontes == ["todas"] and not mapbiomas_configurado():
         ids.remove("mapbiomas_alerta")
         print("MapBiomas Alerta ignorado (sem MAPBIOMAS_EMAIL/MAPBIOMAS_SENHA no .env).")
-    desconhecidas = [i for i in ids if i not in FONTES]
+    desconhecidas = [i for i in ids if i not in FONTES and i != "pam_ibge"]
     if desconhecidas:
         print(f"Fontes desconhecidas: {', '.join(desconhecidas)}. Use --listar.")
         return 2
@@ -41,9 +43,12 @@ def main() -> int:
     falhas = []
     with conectar(DATABASE_URL) as conn:
         for i in ids:
-            print(f"→ {FONTES[i].descricao}")
+            print(f"→ {FONTES[i].descricao if i in FONTES else 'Produção Agrícola Municipal (IBGE/PAM)'}")
             try:
-                carregar(conn, FONTES[i], bbox)
+                if i == "pam_ibge":
+                    carregar_pam(conn)
+                else:
+                    carregar(conn, FONTES[i], bbox)
             except Exception:  # segue para as próximas fontes
                 falhas.append(i)
     if falhas:

@@ -58,7 +58,11 @@ def resumo():
                  (SELECT coalesce(sum(valor_estimado), 0) FROM app.prospects
                     WHERE etapa NOT IN ('cliente', 'perdido') AND categoria IN ('cliente', 'comprador')) AS pipeline_valor,
                  (SELECT count(*) FROM app.prospects WHERE proximo_em <= current_date
-                    AND etapa NOT IN ('cliente', 'perdido')) AS tarefas_atrasadas""").fetchone()
+                    AND etapa NOT IN ('cliente', 'perdido')) AS tarefas_atrasadas,
+                 (SELECT count(*) FROM app.lotes WHERE situacao IN ('ativo', 'negociando')) AS lotes_ativos,
+                 (SELECT coalesce(sum(volume_t), 0) FROM app.lotes WHERE situacao IN ('ativo', 'negociando')) AS volume_ofertado_t,
+                 (SELECT count(*) FROM app.interesses WHERE criado_em >= now() - interval '30 days') AS interesses_30d,
+                 (SELECT coalesce(sum(volume_fechado_t), 0) FROM app.interesses WHERE situacao = 'fechado') AS volume_fechado_t""").fetchone()
         funil = conn.execute(
             """SELECT etapa, count(*) AS n, coalesce(sum(valor_estimado), 0) AS valor FROM app.prospects
                WHERE categoria IN ('cliente', 'comprador') GROUP BY etapa""").fetchall()

@@ -24,6 +24,7 @@ COLUNAS = {
     "geo.terras_indigenas": ["id_origem", "nome", "etnia", "fase"],
     "geo.alertas_desmatamento": ["id_origem", "data_deteccao", "data_publicacao", "area_ha", "classe", "situacao",
                                  "satelite", "municipio", "uf"],
+    "geo.municipios": ["id_origem", "nome", "uf", "area_km2"],
     "geo.territorios": ["id_origem", "tipo", "nome", "municipio", "uf", "fase", "familias"],
     "geo.imoveis": ["tipo", "codigo", "nome", "municipio", "uf", "situacao"],
 }
@@ -182,6 +183,11 @@ def m_mapbiomas(p: dict) -> dict:
             "municipio": None, "uf": None}
 
 
+def m_municipio(p: dict) -> dict:
+    return {"id_origem": texto(p.get("cd_mun")), "nome": texto(p.get("nm_mun")), "uf": texto(p.get("sigla")),
+            "area_km2": numero(p.get("area_km2"))}
+
+
 def m_quilombo(p: dict) -> dict:
     return {"id_origem": texto(p.get("cd_quilomb")) or texto(p.get("objectid")), "tipo": "quilombola",
             "nome": texto(p.get("nm_comunid")), "municipio": texto(p.get("nm_municip")), "uf": texto(p.get("cd_uf")),
@@ -267,6 +273,10 @@ FONTES: dict[str, Fonte] = {f.id: f for f in [
     Fonte("mapbiomas_alerta", "MapBiomas Alerta: alertas validados de desmatamento", "geo.alertas_desmatamento",
           "https://plataforma.alerta.mapbiomas.org",
           lambda bbox: clientes.mapbiomas_alertas(*_credenciais_mapbiomas(), bbox), m_mapbiomas),
+    Fonte("municipios_ibge", "Limites municipais (IBGE 2021)", "geo.municipios",
+          f"{IBAMA}/lim_mun_ibge_250k_2021/FeatureServer/11",
+          _arcgis("lim_mun_ibge_250k_2021/FeatureServer/11", ["objectid", "cd_mun", "nm_mun", "sigla", "area_km2"]),
+          m_municipio),
     Fonte("quilombolas_incra", "Territórios quilombolas (INCRA)", "geo.territorios",
           f"{IBAMA_SINC}/lim_quilombos_incra_a/FeatureServer/0",
           _arcgis("lim_quilombos_incra_a/FeatureServer/0",

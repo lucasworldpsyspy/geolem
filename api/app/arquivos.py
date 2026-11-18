@@ -98,6 +98,7 @@ def ler_feicoes(nome_arquivo: str, conteudo: bytes) -> list[dict]:
             "nome": _texto(linha, "nome", "name", "fazenda", "imovel", "nom_imovel", "cod_imovel") or f"Área {i}",
             "fornecedor": _texto(linha, "fornecedor", "produtor", "proprietario"),
             "codigo_externo": _texto(linha, "codigo_externo", "codigo_erp", "cod_fornecedor", "codigo"),
+            "cultura": _texto(linha, "cultura", "commodity", "produto"),
             "geometria": json.loads(json.dumps(mapping(g))),
         })
     return saida

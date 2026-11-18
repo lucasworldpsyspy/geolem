@@ -16,3 +16,14 @@ def test_mensagem_e_link_do_convite():
     assert "Cooperativa X" in msg and "Fazenda Boa Vista" in msg
     assert convites.link("abc123").endswith("/convite.html?t=abc123")
     assert "Posso pedir a exclusão" in convites.CONSENTIMENTO
+
+
+def test_culturas():
+    assert mercado.normalizar_cultura("Algodão") == "algodao"
+    assert mercado.normalizar_cultura(" CAFÉ arábica") == "cafe"
+    assert mercado.normalizar_cultura(None) == "soja"
+    import pytest
+    with pytest.raises(ValueError):
+        mercado.normalizar_cultura("trigo")
+    algodao = {"produtividade_sc_ha": 300, "preco_saca": 100.0, "kg_por_unidade": 15}
+    assert mercado.estimar(10, algodao) == {"ha": 10, "sacas": 3000, "toneladas": 45.0, "reais": 300000.0}

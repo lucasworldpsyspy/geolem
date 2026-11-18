@@ -295,6 +295,8 @@
       [d.tarefas_atrasadas ? 'warn' : '', fmtN(d.tarefas_atrasadas), 'próximos passos vencidos'],
       ['', fmtN(d.leads_30d), `leads em 30 dias (${d.leads_sem_prospect} fora do CRM)`],
       ['', fmtN(d.laudos_mes), 'laudos neste mês'], ['', fmtN(d.areas_monitoradas), 'áreas monitoradas'],
+      ['', `${fmtN(d.lotes_ativos)} · ${fmtN(d.volume_ofertado_t)} t`, 'lotes no mercado · volume ofertado'],
+      ['', fmtN(d.interesses_30d), `interesses em 30 dias · ${fmtN(d.volume_fechado_t)} t fechadas`],
     ].map(([c, n, t]) => `<div class="indicador ${c}"><div class="n">${n}</div><div class="t">${t}</div></div>`).join('');
     const max = Math.max(1, ...d.funil.map((f) => f.n));
     $('#funil').innerHTML = d.funil.map((f) => `<div class="linha"><span>${ETAPA[f.etapa]}</span>
@@ -511,19 +513,20 @@
   // ---------- preços de referência ----------
   async function carregarPrecos() {
     const refs = await api('/api/admin/referencias');
-    $('#precos').innerHTML = ['soja', 'milho'].map((p) => {
+    $('#precos').innerHTML = Object.keys(refs).map((p) => {
       const r = refs[p] || {};
       return `<form class="caixa" data-produto="${p}" style="display:flex;flex-direction:column;gap:10px">
-        <h2 style="margin:0">${p === 'soja' ? 'Soja' : 'Milho'}</h2>
-        <label class="campo">Praça <input name="praca" type="text" maxlength="100" value="${esc(r.praca || '')}" required></label>
+        <h2 style="margin:0">${esc(r.rotulo)} <small style="text-transform:none;letter-spacing:0">· preço por ${esc(r.unidade)}</small></h2>
+        <p class="aviso" style="margin:0">Em uso: <b>${r.preco_saca != null ? 'R$ ' + fmtN(r.preco_saca, 2) : 'sem preço'}</b> (${esc(r.fonte_preco || '-')}) e ${fmtN(r.produtividade_sc_ha, 1)} por ha (${esc(r.fonte_produtividade || '-')}).</p>
+        <label class="campo">Praça <input name="praca" type="text" maxlength="100" value="${esc(r.praca === 'Região do GeoLEM' ? '' : r.praca || '')}" placeholder="Ex.: Luís Eduardo Magalhães (BA)" required></label>
         <div class="grade-form">
-          <label class="campo">Preço (R$/saca 60 kg) <input name="preco_saca" type="number" min="0" step="0.01" value="${r.preco_saca ?? ''}"></label>
-          <label class="campo">Data do preço <input name="data_preco" type="date" value="${r.data_preco || ''}"></label>
+          <label class="campo">Preço cadastrado (R$/${esc(r.unidade)}) <input name="preco_saca" type="number" min="0" step="0.01" value="${r.preco_cadastrado ?? ''}"></label>
+          <label class="campo">Data do preço <input name="data_preco" type="date" value="${r.data_cadastrada || ''}"></label>
         </div>
-        <label class="campo">Fonte do preço <input name="fonte_preco" type="text" maxlength="200" value="${esc(r.fonte_preco || '')}"></label>
-        <label class="campo">Produtividade (sacas/ha) <input name="produtividade_sc_ha" type="number" min="0" step="0.1" value="${r.produtividade_sc_ha ?? ''}"></label>
-        <label class="campo">Fonte da produtividade <input name="fonte_produtividade" type="text" maxlength="200" value="${esc(r.fonte_produtividade || '')}"></label>
-        <p class="aviso">${r.dias_do_preco != null ? `Preço de ${r.dias_do_preco} dia(s) atrás.` : 'Sem preço cadastrado.'} Atualizado em ${quando(r.atualizado_em)}.</p>
+        <label class="campo">Fonte do preço <input name="fonte_preco" type="text" maxlength="200" value="${esc(r.fonte_cadastrada || '')}"></label>
+        <label class="campo">Produtividade cadastrada (por ha; vazio = IBGE/PAM) <input name="produtividade_sc_ha" type="number" min="0" step="0.1" value="${r.produtividade_cadastrada ?? ''}"></label>
+        <label class="campo">Fonte da produtividade <input name="fonte_produtividade" type="text" maxlength="200" value="${esc(r.fonte_produtividade_cadastrada || '')}"></label>
+        <p class="aviso">Preço cadastrado vale por 60 dias; depois o painel volta ao preço médio oficial do IBGE/PAM. ${r.atualizado_em ? 'Atualizado em ' + quando(r.atualizado_em) + '.' : ''}</p>
         <button class="btn btn-primario" type="submit">Salvar</button></form>`;
     }).join('');
   }

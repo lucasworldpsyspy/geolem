@@ -9,7 +9,7 @@ from fastapi.responses import HTMLResponse, Response
 from pydantic import BaseModel, Field
 from psycopg.types.json import Jsonb
 
-from . import contas, convites, observatorio, regras
+from . import contas, convites, lotes, observatorio, regras
 from .analise import ErroAnalise, analisar
 from .db import pool
 from .dependencias import ip as ip_de
@@ -71,6 +71,23 @@ def _gravar_lead(conn, c: Contato, email: str, interesse: str, detalhe: dict, ip
 def numeros_da_regiao():
     with pool.connection() as conn:
         return observatorio.dados(conn)
+
+
+@rotas.get("/observatorio/mapa.geojson")
+def mapa_da_regiao():
+    """Municípios com os indicadores do observatório, para o mapa coroplético."""
+    with pool.connection() as conn:
+        m = observatorio.mapa(conn)
+    if not m:
+        raise HTTPException(404, "Malha municipal não carregada.")
+    return m
+
+
+@rotas.get("/mercado/resumo")
+def vitrine_do_mercado():
+    """Volume disponível em lotes de origem verificada, por cultura (sem identificar vendedores)."""
+    with pool.connection() as conn:
+        return lotes.resumo_publico(conn)
 
 
 @rotas.get("/consentimento")

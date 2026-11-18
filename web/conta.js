@@ -20,7 +20,7 @@
     return `<span class="selo warn" title="Fale com a GeoLEM para renovar">${txt}</span>`;
   }
   const itens = [['painel', '/painel.html', 'Painel'], ['carteira', '/carteira.html', 'Carteira'], ['analise', '/', 'Análise'],
-    ['laudos', '/laudos.html', 'Laudos']];
+    ['mercado', '/mercado.html', 'Mercado'], ['laudos', '/laudos.html', 'Laudos']];
   if (eu.papel === 'admin') itens.push(['equipe', '/equipe.html', 'Equipe']);
   if (eu.superadmin) itens.push(['admin', '/admin.html', 'Admin GeoLEM']);
   barra.innerHTML =
