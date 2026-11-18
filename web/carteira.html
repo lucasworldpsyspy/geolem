@@ -39,6 +39,7 @@
         <button id="btn-importar" class="btn btn-primario" type="button">⇪ Importar áreas</button>
         <button id="btn-reanalisar" class="btn" type="button">↻ Reanalisar tudo</button>
         <a class="btn" href="/api/carteira/exportar.csv">⇩ Planilha</a>
+        <a class="btn" href="/api/carteira/convites.csv" title="Um link de convite por fornecedor, com mensagem pronta para WhatsApp ou e-mail">✉ Convites (planilha)</a>
         <a class="btn" href="/api/carteira/eudr.geojson" title="Geolocalização de todas as áreas Conformes, para a declaração de diligência no TRACES">⇩ EUDR (conformes)</a>
       </div>
     </div>
@@ -106,6 +107,18 @@
         <button class="btn btn-primario" id="btn-enviar" type="button" disabled>Importar</button>
       </div>
     </form>
+  </dialog>
+
+  <dialog id="dlg-convite">
+    <h3>Convidar o produtor</h3>
+    <p class="aviso">Área: <b id="convite-area"></b>. Envie a mensagem ao fornecedor: ele vê a situação da própria área e, se aceitar, recebe o laudo e o selo de origem verificada.</p>
+    <textarea id="convite-msg" rows="5" readonly style="width:100%;margin:10px 0;color:var(--texto);background:var(--bg);border:1px solid var(--borda);border-radius:8px;padding:10px;font:inherit"></textarea>
+    <p class="aviso" id="convite-status"></p>
+    <div class="botoes" style="justify-content:flex-end;margin-top:12px">
+      <button class="btn" type="button" id="convite-copiar">Copiar</button>
+      <a class="btn" id="convite-whats" target="_blank" rel="noopener">Enviar por WhatsApp</a>
+      <button class="btn btn-primario" type="button" onclick="this.closest('dialog').close()">Fechar</button>
+    </div>
   </dialog>
 
   <p class="rodape"><a href="/termos.html">Termos de uso</a> · <a href="/privacidade.html">Privacidade</a></p>
@@ -188,6 +201,7 @@
       <td>${a.analisado_em ? fmtData(a.analisado_em) : '-'}${a.ultimo_protocolo ? `<small>${esc(a.ultimo_protocolo)}</small>` : ''}</td>
       <td><div class="acoes-linha">
         ${a.ultimo_protocolo ? `<a class="btn btn-peq" href="/api/analises/${encodeURIComponent(a.ultimo_protocolo)}/laudo.pdf" target="_blank" rel="noopener">Laudo</a>` : ''}
+        <button class="btn btn-peq" data-convidar="${a.id}" data-nome="${esc(a.nome)}" type="button" title="Convidar o produtor desta área">${a.convite === 'aceito' ? '✓ Produtor' : a.convite === 'enviado' ? '✉ Convidado' : '✉ Convidar'}</button>
         <button class="btn btn-peq" data-reanalisar="${a.id}" type="button" title="Reanalisar agora">↻</button>
         <button class="btn btn-peq btn-perigo" data-remover="${a.id}" data-nome="${esc(a.nome)}" type="button" title="Remover da carteira">✕</button>
       </div></td></tr>`).join('') || '<tr><td colspan="7" class="vazio">Nenhuma área com esse filtro.</td></tr>';
@@ -213,6 +227,19 @@
 
   // Ações por linha
   $('#linhas').addEventListener('click', async (e) => {
+    const cv = e.target.closest('[data-convidar]');
+    if (cv) {
+      try {
+        const c = await api(`/api/carteira/areas/${cv.dataset.convidar}/convite`, { method: 'POST' });
+        $('#convite-area').textContent = cv.dataset.nome;
+        $('#convite-msg').value = c.mensagem;
+        $('#convite-whats').href = 'https://wa.me/?text=' + encodeURIComponent(c.mensagem);
+        $('#convite-status').textContent = c.aceito ? 'O produtor já aceitou este convite.' : 'O link vale por 30 dias.';
+        $('#dlg-convite').showModal();
+        carregar();
+      } catch (err) { alert(err.message); }
+      return;
+    }
     const re = e.target.closest('[data-reanalisar]');
     const rm = e.target.closest('[data-remover]');
     try {
@@ -274,6 +301,7 @@
     } finally { b.textContent = 'Importar'; }
   });
 
+  $('#convite-copiar').addEventListener('click', () => navigator.clipboard.writeText($('#convite-msg').value));
   carregar().catch((err) => { $('#linhas').innerHTML = `<tr><td colspan="7" class="vazio">${esc(err.message)}</td></tr>`; });
 </script>
 </body>

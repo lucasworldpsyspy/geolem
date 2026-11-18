@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>Convite · GeoLEM</title>
+  <link rel="icon" href="/marca.svg">
+  <link rel="stylesheet" href="/estilo.css">
+  <style>
+    body { min-height: 100vh; }
+    .cartao-convite { max-width: 620px; margin: 0 auto; padding: 28px 18px 48px; display: flex; flex-direction: column; gap: 18px; }
+    .marca-topo { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 18px; }
+    .marca-topo img { width: 32px; height: 32px; }
+    .situacao { border-radius: 12px; padding: 16px; border: 1px solid var(--borda); background: var(--painel); }
+    .situacao .rot { font-size: 22px; font-weight: 700; margin: 4px 0; }
+    .situacao.ok { border-color: var(--ok); } .situacao.ok .rot { color: var(--ok); }
+    .situacao.warn { border-color: var(--warn); } .situacao.warn .rot { color: var(--warn); }
+    .situacao.bad { border-color: var(--bad); } .situacao.bad .rot { color: #ff8a80; }
+    .situacao ul { margin: 8px 0 0; padding-left: 18px; color: #cfdad3; }
+    form { display: flex; flex-direction: column; gap: 12px; }
+    .consent { display: flex; gap: 10px; align-items: flex-start; font-size: 12.5px; color: var(--suave); }
+    .consent input { margin-top: 3px; }
+    .beneficios { margin: 0; padding-left: 18px; color: #cfdad3; }
+  </style>
+</head>
+<body>
+  <main class="cartao-convite">
+    <div class="marca-topo"><img src="/marca.svg" alt="">GeoLEM</div>
+    <div id="conteudo"><p class="aviso">Carregando o convite…</p></div>
+  </main>
+<script>
+  const $ = (s) => document.querySelector(s);
+  const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const token = new URLSearchParams(location.search).get('t') || '';
+  const fmtN = (v) => Number(v || 0).toLocaleString('pt-BR', { maximumFractionDigits: 1 });
+
+  async function carregar() {
+    const r = await fetch(`/api/publico/convite/${encodeURIComponent(token)}`);
+    if (!r.ok) { $('#conteudo').innerHTML = '<h1>Convite não encontrado</h1><p class="aviso">Confira o link ou peça um novo a quem enviou.</p>'; return; }
+    const c = await r.json();
+    const sit = c.situacao ? `<div class="situacao ${esc(c.situacao)}"><small class="aviso">Situação da área nas bases oficiais</small>
+        <p class="rot">${esc(c.rotulo)}</p>
+        ${c.ocorrencias.length ? `<ul>${c.ocorrencias.map((o) => `<li>${esc(o.titulo)}: ${esc(o.rotulo)}</li>`).join('')}</ul>` : '<p class="aviso">Nenhuma ocorrência nas verificações.</p>'}
+        ${c.renovabio ? `<p class="aviso" style="margin-top:8px">RenovaBio: ${esc(c.renovabio)}</p>` : ''}
+        ${c.protocolo ? `<p style="margin-top:10px"><a href="/api/analises/${encodeURIComponent(c.protocolo)}/laudo.pdf" target="_blank" rel="noopener">Ver o laudo completo (PDF)</a></p>` : ''}</div>`
+      : '<div class="situacao"><p class="aviso">A análise desta área ainda está em andamento.</p></div>';
+    let acao;
+    if (c.aceito) acao = '<p class="sucesso">Convite já aceito. Vamos falar com você sobre o selo de origem verificada.</p>';
+    else if (c.expirado) acao = '<p class="erro">Este convite expirou. Peça um novo a quem enviou.</p>';
+    else acao = `<h2 style="color:var(--texto);text-transform:none;letter-spacing:0;font-size:18px;margin:6px 0 0">Receba o laudo e o selo da sua área</h2>
+      <ul class="beneficios"><li>Mostre a qualquer comprador, por QR code, que a área está regular nas bases oficiais.</li>
+      <li>Venda e financie com menos burocracia.</li><li>Saiba antes do comprador se aparecer algum problema.</li></ul>
+      <form id="form" novalidate>
+        <label class="campo">Seu nome <input id="nome" type="text" maxlength="120" autocomplete="name" required></label>
+        <label class="campo">E-mail <input id="email" type="email" maxlength="200" autocomplete="email" required></label>
+        <label class="campo">WhatsApp (opcional) <input id="tel" type="text" maxlength="40" autocomplete="tel"></label>
+        <label class="consent"><input id="ok" type="checkbox"> <span>${esc(c.consentimento).replace('Política de Privacidade', '<a href="/privacidade.html" target="_blank">Política de Privacidade</a>')}</span></label>
+        <p class="erro" id="erro" hidden></p>
+        <button class="btn btn-primario" type="submit">Aceitar e receber o selo</button>
+      </form>`;
+    $('#conteudo').innerHTML = `<h1 style="font-size:24px">${esc(c.empresa)} convidou você</h1>
+      <p class="aviso">Área <b>${esc(c.area)}</b>${c.municipio ? ' · ' + esc(c.municipio) : ''} · ${fmtN(c.area_ha)} ha</p>
+      ${sit}${acao}
+      <p class="aviso" style="margin-top:18px">O GeoLEM cruza a área com bases públicas oficiais (INPE, IBAMA, INCRA, FUNAI e outras). <a href="/termos.html">Termos</a> · <a href="/privacidade.html">Privacidade</a></p>`;
+    const f = $('#form');
+    if (f) f.addEventListener('submit', enviar);
+  }
+
+  async function enviar(e) {
+    e.preventDefault();
+    const erro = $('#erro'); erro.hidden = true;
+    const corpo = { nome: $('#nome').value.trim(), email: $('#email').value.trim(), telefone: $('#tel').value.trim() || null, consentimento: $('#ok').checked };
+    if (!corpo.nome || !corpo.email) { erro.textContent = 'Informe nome e e-mail.'; erro.hidden = false; return; }
+    if (!corpo.consentimento) { erro.textContent = 'Para continuar, marque a autorização de uso dos seus dados.'; erro.hidden = false; return; }
+    const r = await fetch(`/api/publico/convite/${encodeURIComponent(token)}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(corpo) });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) { erro.textContent = typeof d.detail === 'string' ? d.detail : 'Não foi possível concluir.'; erro.hidden = false; return; }
+    e.target.outerHTML = '<p class="sucesso">Pronto! Recebemos seu aceite. Vamos falar com você sobre o selo de origem verificada.</p>';
+  }
+
+  carregar();
+</script>
+</body>
+</html>

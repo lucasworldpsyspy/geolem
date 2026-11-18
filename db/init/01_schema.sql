@@ -365,3 +365,44 @@ ALTER TABLE app.prospects ADD COLUMN IF NOT EXISTS categoria text NOT NULL DEFAU
                           ADD COLUMN IF NOT EXISTS site text,
                           ADD COLUMN IF NOT EXISTS ticket text;  -- investidores: faixa de cheque, ex. "R$ 100 mil a 500 mil"
 CREATE INDEX IF NOT EXISTS prospects_categoria_idx ON app.prospects (categoria, etapa);
+
+-- Preço e produtividade de referência (geridos no Admin, com fonte e data): base do "valor em risco"
+CREATE TABLE IF NOT EXISTS app.referencias_mercado (
+  produto              text PRIMARY KEY,             -- soja | milho
+  praca                text NOT NULL,
+  preco_saca           numeric(10, 2),               -- R$ por saca de 60 kg
+  data_preco           date,
+  fonte_preco          text,
+  produtividade_sc_ha  numeric(8, 2),
+  fonte_produtividade  text,
+  atualizado_em        timestamptz NOT NULL DEFAULT now(),
+  atualizado_por       integer
+);
+INSERT INTO app.referencias_mercado (produto, praca, preco_saca, data_preco, fonte_preco, produtividade_sc_ha, fonte_produtividade)
+VALUES ('soja', 'Luís Eduardo Magalhães (BA)', 134.00, '2026-08-18', 'Notícias Agrícolas, mercado físico (atualize no Admin)',
+        71, 'Aiba, safra 2025/26 (média ponderada)')
+ON CONFLICT (produto) DO NOTHING;
+INSERT INTO app.referencias_mercado (produto, praca, preco_saca, data_preco, fonte_preco, produtividade_sc_ha, fonte_produtividade)
+VALUES ('milho', 'Oeste da Bahia', NULL, NULL, NULL, 187,
+        'Aiba, milho verão 2025/26: 1,47 Mt em 131 mil ha (~187 sc/ha)')
+ON CONFLICT (produto) DO NOTHING;
+
+-- Convite do comprador ao produtor da carteira: o produtor entra no CRM por decisão própria (consentimento)
+CREATE TABLE IF NOT EXISTS app.convites (
+  id                 bigserial PRIMARY KEY,
+  token              text NOT NULL UNIQUE,
+  empresa_id         integer NOT NULL REFERENCES app.empresas(id),
+  area_id            bigint NOT NULL REFERENCES app.areas(id) ON DELETE CASCADE,
+  criado_por         integer,
+  criado_em          timestamptz NOT NULL DEFAULT now(),
+  expira_em          timestamptz NOT NULL,
+  visto_em           timestamptz,
+  aceito_em          timestamptz,
+  nome               text,
+  email              text,
+  telefone           text,
+  consentimento_txt  text,
+  ip                 text,
+  prospect_id        integer REFERENCES app.prospects(id)
+);
+CREATE INDEX IF NOT EXISTS convites_area_idx ON app.convites (area_id);

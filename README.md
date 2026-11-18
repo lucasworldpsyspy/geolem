@@ -174,6 +174,25 @@ Planos sugeridos (`api/app/licencas.py`, limites editáveis empresa a empresa): 
 3 usuários), Essencial (100 áreas), Profissional (500 áreas, 10 usuários) e Corporativo (sem limites).
 Para dar acesso ao admin: `python -m app.contas superadmin seu@email.com.br` (a instalação já faz isso com a sua conta).
 
+### Valor em risco e preços de referência
+O painel da carteira mostra, em reais e em sacas, a produção anual estimada de soja nos fornecedores Não conformes
+(área total e só os hectares com ocorrência) e o milho inelegível no RenovaBio. A conta usa um preço e uma produtividade
+de referência geridos no Admin (aba "Preços de referência"), sempre com fonte e data; o painel avisa quando o preço tem
+mais de 30 dias. O valor nunca entra no laudo, que precisa ser reprodutível. O portal de preços da Conab não respondeu
+nos testes; fontes públicas da região: Aiba (preço da soja toda segunda), Notícias Agrícolas e Agrolink.
+
+### Convite ao produtor
+Na carteira, cada área tem o botão "Convidar": gera um link de 30 dias e uma mensagem pronta para WhatsApp ou e-mail
+(ou todos de uma vez em "Convites (planilha)"). O produtor abre `/convite.html`, vê a situação da própria área e, se
+aceitar com consentimento registrado, entra no CRM como produtor ligado ao comprador que o convidou. Sem o aceite,
+nenhum dado do fornecedor sai da carteira do cliente.
+
+### Produtores no CRM
+Produtor pessoa física só entra no CRM por iniciativa própria: convite de um cliente, selo no observatório ou
+formulário. Grupos agrícolas (empresas) podem ser cadastrados ou importados. Para o planejamento de marketing, a aba
+de produtores do CRM mostra cada município com imóveis, área, pressão de compliance, cobertura do CRM, leads e
+convites, e uma prioridade para escolher onde fazer campanha.
+
 ### Carteira e monitoramento
 - **Importar em lote** pela página Carteira: planilha CSV/Excel com o código SIGEF ou CAR (colunas `codigo`, `nome`,
   `fornecedor`, `codigo_erp`, `reserva_legal_ha`), ou arquivo geográfico em que cada polígono vira uma área. Linhas com
@@ -290,6 +309,11 @@ Para restaurar num banco vazio:
 | POST | `/api/carteira/reanalisar` | pôr áreas na fila de novo |
 | GET | `/api/carteira/alertas` | alertas de mudança de situação |
 | GET | `/api/carteira/exportar.csv` · `/api/carteira/eudr.geojson` | exportações da carteira |
+| GET | `/api/carteira/painel` | painel da carteira, com o valor em risco |
+| POST | `/api/carteira/areas/{id}/convite` · GET `/api/carteira/convites.csv` | convite ao produtor (um ou em lote) |
+| GET/POST | `/api/publico/convite/{token}` | página do convite e aceite do produtor |
+| GET/PUT | `/api/admin/referencias` | preços e produtividade de referência |
+| GET | `/api/admin/produtores/municipios` | planejamento de produtores por município |
 | GET | `/verificar/{protocolo}` | página pública de verificação (destino do QR code) |
 | POST | `/api/arquivos/geometria` | converte KML/KMZ/SHP/GeoJSON/GPKG em GeoJSON |
 | GET | `/api/tiles/{camada}/{z}/{x}/{y}.pbf` | vector tiles para o mapa |

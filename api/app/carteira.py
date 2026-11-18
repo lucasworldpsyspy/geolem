@@ -189,10 +189,13 @@ def listar_areas(conn, empresa_id: int) -> list[dict]:
     linhas = conn.execute(
         """SELECT a.id, a.nome, a.fornecedor, a.codigo_externo, a.municipio, round(a.area_ha::numeric, 2) AS area_ha,
                   a.ultimo_status, a.status_anterior, a.ultimo_protocolo, a.analisado_em, a.origem, a.criado_em,
-                  t.estado AS fila, t.erro AS erro
+                  t.estado AS fila, t.erro AS erro,
+                  CASE WHEN cv.aceito_em IS NOT NULL THEN 'aceito' WHEN cv.id IS NOT NULL THEN 'enviado' END AS convite
            FROM app.areas a
            LEFT JOIN LATERAL (SELECT estado, erro FROM app.tarefas WHERE area_id = a.id
                               ORDER BY id DESC LIMIT 1) t ON true
+           LEFT JOIN LATERAL (SELECT id, aceito_em FROM app.convites WHERE area_id = a.id
+                              ORDER BY aceito_em IS NULL, id DESC LIMIT 1) cv ON true
            WHERE a.empresa_id = %s AND a.ativa
            ORDER BY CASE a.ultimo_status WHEN 'bad' THEN 0 WHEN 'warn' THEN 1 WHEN 'ok' THEN 3 ELSE 2 END, a.nome""",
         (empresa_id,)).fetchall()

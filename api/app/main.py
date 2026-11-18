@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
 
 from . import carteira as cart
-from . import contas, licencas, painel, tiles
+from . import contas, convites, licencas, mercado, painel, tiles
 from .dependencias import admin, superadmin, usuario
 from .dependencias import ip as _ip
 from .rotas_admin import rotas as rotas_admin
@@ -46,7 +46,7 @@ app.include_router(rotas_admin)
 # ---------- Acesso ----------
 # Sem login: a tela de entrada, os termos, o observatório (e suas rotas), a saúde do serviço e a verificação
 # pública de laudos (QR code).
-PUBLICO_EXATO = {"/entrar.html", "/termos.html", "/privacidade.html", "/observatorio.html", "/api/auth/login",
+PUBLICO_EXATO = {"/entrar.html", "/termos.html", "/privacidade.html", "/observatorio.html", "/convite.html", "/api/auth/login",
                  "/api/saude", "/favicon.ico", "/marca.svg", "/estilo.css"}
 PUBLICO_PREFIXO = ("/api/publico/",)
 PUBLICO_LEITURA = re.compile(r"^/(verificar/[^/]+|api/analises/GL-[^/]+(/laudo\.pdf|/imagens/(antes|depois)\.png)?)$")
@@ -443,7 +443,36 @@ def painel_carteira(u: dict = Depends(usuario)):
     """Dashboard: evolução semanal, motivos, municípios, fornecedores e validade dos laudos."""
     with pool.connection() as conn:
         return {**painel.painel(conn, u["empresa_id"]), "resumo": cart.resumo_carteira(conn, u["empresa_id"]),
-                "uso": licencas.uso(conn, u["empresa_id"])}
+                "uso": licencas.uso(conn, u["empresa_id"]), "risco": mercado.risco_carteira(conn, u["empresa_id"])}
+
+
+@app.post("/api/carteira/areas/{area_id}/convite")
+def convidar_produtor(area_id: int, request: Request, u: dict = Depends(usuario)):
+    """Link para o fornecedor desta área ver a situação dela e aceitar o laudo e o selo."""
+    with pool.connection() as conn:
+        c = convites.gerar(conn, u["empresa_id"], area_id, u["id"])
+        if not c:
+            raise HTTPException(404, "Área não encontrada.")
+        contas.auditar(conn, "convite_produtor", u, alvo=str(area_id), ip=_ip(request))
+    return c
+
+
+@app.get("/api/carteira/convites.csv")
+def convites_em_lote(request: Request, u: dict = Depends(usuario)):
+    """Um convite por área ativa (reaproveita os válidos), em planilha para mala direta ou WhatsApp."""
+    with pool.connection() as conn:
+        areas = conn.execute("""SELECT id, nome, fornecedor, codigo_externo FROM app.areas
+                                WHERE empresa_id = %s AND ativa ORDER BY nome""", (u["empresa_id"],)).fetchall()
+        buf = io.StringIO()
+        w = csv.writer(buf, delimiter=";")
+        w.writerow(["Área", "Fornecedor", "Código no ERP", "Link do convite", "Mensagem sugerida", "Já aceito"])
+        for a in areas:
+            c = convites.gerar(conn, u["empresa_id"], a["id"], u["id"])
+            w.writerow([a["nome"], a["fornecedor"] or "", a["codigo_externo"] or "", c["url"], c["mensagem"],
+                        "sim" if c["aceito"] else "não"])
+        contas.auditar(conn, "convite_produtor", u, alvo="lote", detalhes={"areas": len(areas)}, ip=_ip(request))
+    return Response("\ufeff" + buf.getvalue(), media_type="text/csv; charset=utf-8",
+                    headers={"Content-Disposition": 'attachment; filename="convites-produtores.csv"'})
 
 
 @app.get("/api/carteira/mapa.geojson")

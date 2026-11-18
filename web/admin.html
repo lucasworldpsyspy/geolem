@@ -50,6 +50,7 @@
       <button class="btn" role="tab" data-aba="crm" aria-selected="false" type="button">Possíveis clientes (CRM)</button>
       <button class="btn" role="tab" data-aba="clientes" aria-selected="false" type="button">Clientes e licenças</button>
       <button class="btn" role="tab" data-aba="leads" aria-selected="false" type="button">Leads do site</button>
+      <button class="btn" role="tab" data-aba="precos" aria-selected="false" type="button">Preços de referência</button>
     </div>
 
     <!-- Visão geral -->
@@ -81,6 +82,16 @@
         <code>contato</code>, <code>cargo</code>, <code>email</code>, <code>telefone</code>, <code>valor_estimado</code>, <code>notas</code>,
         e também <code>categoria</code> (cliente, produtor, comprador, investidor, parceiro), <code>pais</code>, <code>site</code> e <code>ticket</code>. Quem já existe (mesmo CNPJ ou nome) é ignorado.</p>
       <div class="quadro" id="quadro"></div>
+      <section id="plano-produtores" class="caixa" style="margin-top:16px" hidden>
+        <h2>Planejamento por município</h2>
+        <p class="aviso" style="margin-bottom:10px">Números agregados das bases públicas (nenhum produtor identificado) cruzados com o que já está no CRM.
+          Produtor pessoa física só entra no CRM quando aceita: convite de um cliente, selo no observatório ou formulário. Use a prioridade para escolher onde fazer campanha, palestra ou parceria com cooperativa e sindicato.</p>
+        <div class="tabela-wrap"><table>
+          <thead><tr><th>Município</th><th class="num">Imóveis SIGEF</th><th class="num">Área (ha)</th><th class="num">Com desmatamento após 2020</th>
+            <th class="num">Produtores no CRM</th><th class="num">Cobertura</th><th class="num">Leads</th><th class="num">Convites aceitos / enviados</th><th class="num">Prioridade</th></tr></thead>
+          <tbody id="municipios-prod"></tbody>
+        </table></div>
+      </section>
     </section>
 
     <!-- Clientes -->
@@ -93,6 +104,13 @@
         <thead><tr><th>Empresa</th><th>Plano</th><th>Situação</th><th>Validade</th><th>Áreas</th><th>Usuários</th><th>Laudos avulsos (mês)</th><th class="num">R$/mês</th><th>Último acesso</th><th></th></tr></thead>
         <tbody id="empresas"></tbody>
       </table></div>
+    </section>
+
+    <!-- Preços -->
+    <section data-painel="precos" hidden>
+      <p class="aviso" style="margin-bottom:12px">Base do "valor em risco" do painel dos clientes (não entra no laudo). Atualize ao menos uma vez por mês.
+        Fontes públicas de preço da região: Aiba (preço da soja toda segunda), Notícias Agrícolas e Agrolink (mercado físico de LEM e Barreiras), Conab.</p>
+      <div class="grade-2" id="precos"></div>
     </section>
 
     <!-- Leads -->
@@ -227,7 +245,7 @@
     agroindustria: 'Agroindústria / usina', produtor: 'Produtor rural', comprador_graos: 'Comprador de grãos', investidor_anjo: 'Investidor-anjo',
     rede_anjos: 'Rede de anjos', fundo_vc: 'Fundo de venture capital', cvc: 'Venture corporativo (CVC)', aceleradora: 'Aceleradora / programa',
     fomento: 'Fomento / multilateral', marketplace: 'Marketplace', associacao: 'Associação / evento', outro: 'Outro' };
-  const INTERESSE = { consulta: 'Consulta grátis', relatorio: 'Relatório do município', boletim: 'Boletim semanal', selo: 'Selo do produtor (lista de espera)' };
+  const INTERESSE = { consulta: 'Consulta grátis', relatorio: 'Relatório do município', boletim: 'Boletim semanal', selo: 'Selo do produtor (lista de espera)', convite: 'Convite de cliente' };
   const CATEGORIA = { cliente: 'Clientes', produtor: 'Produtores', comprador: 'Compradores de grãos', investidor: 'Investidores', parceiro: 'Parceiros e canais' };
   // Cada funil tem o seu vocabulário (as etapas são as mesmas no banco)
   const ETAPAS_POR_CATEGORIA = {
@@ -262,7 +280,7 @@
   function abrirAba(id) {
     document.querySelectorAll('[data-aba]').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.aba === id)));
     document.querySelectorAll('[data-painel]').forEach((p) => { p.hidden = p.dataset.painel !== id; });
-    ({ visao: carregarVisao, crm: carregarCRM, clientes: carregarClientes, leads: carregarLeads })[id]();
+    ({ visao: carregarVisao, crm: carregarCRM, clientes: carregarClientes, leads: carregarLeads, precos: carregarPrecos })[id]();
     history.replaceState(null, '', '#' + id);
   }
   document.querySelectorAll('[data-aba]').forEach((b) => b.addEventListener('click', () => abrirAba(b.dataset.aba)));
@@ -308,7 +326,18 @@
     }
     desenharQuadro();
   }
+  async function carregarPlanoProdutores() {
+    const lista = await api('/api/admin/produtores/municipios');
+    $('#municipios-prod').innerHTML = lista.map((m) => `<tr><td><b>${esc(m.municipio)}</b>${m.uf ? '/' + esc(m.uf) : ''}</td>
+      <td class="num">${fmtN(m.imoveis)}</td><td class="num">${fmtN(m.ha)}</td><td class="num">${fmtN(m.pos2020)} (${fmtN(m.pct_pos2020, 1)}%)</td>
+      <td class="num">${fmtN(m.produtores_crm)}</td><td class="num">${fmtN(m.cobertura_pct, 1)}%</td><td class="num">${fmtN(m.leads)}</td>
+      <td class="num">${fmtN(m.convites_aceitos)} / ${fmtN(m.convites_enviados)}</td><td class="num"><b>${fmtN(m.prioridade)}</b></td></tr>`).join('');
+  }
+
   function desenharQuadro() {
+    const planoVisivel = categoriaAtual === 'produtor';
+    $('#plano-produtores').hidden = !planoVisivel;
+    if (planoVisivel && !$('#municipios-prod').children.length) carregarPlanoProdutores();
     const t = $('#busca-crm').value.trim().toLowerCase(), tipo = $('#filtro-tipo').value;
     const hoje = new Date().toISOString().slice(0, 10);
     const lista = prospects.filter((p) => p.categoria === categoriaAtual && (!tipo || p.tipo === tipo) &&
@@ -479,6 +508,33 @@
     } catch (err) { $('#erro-empresa').textContent = err.message; $('#erro-empresa').hidden = false; }
   });
 
+  // ---------- preços de referência ----------
+  async function carregarPrecos() {
+    const refs = await api('/api/admin/referencias');
+    $('#precos').innerHTML = ['soja', 'milho'].map((p) => {
+      const r = refs[p] || {};
+      return `<form class="caixa" data-produto="${p}" style="display:flex;flex-direction:column;gap:10px">
+        <h2 style="margin:0">${p === 'soja' ? 'Soja' : 'Milho'}</h2>
+        <label class="campo">Praça <input name="praca" type="text" maxlength="100" value="${esc(r.praca || '')}" required></label>
+        <div class="grade-form">
+          <label class="campo">Preço (R$/saca 60 kg) <input name="preco_saca" type="number" min="0" step="0.01" value="${r.preco_saca ?? ''}"></label>
+          <label class="campo">Data do preço <input name="data_preco" type="date" value="${r.data_preco || ''}"></label>
+        </div>
+        <label class="campo">Fonte do preço <input name="fonte_preco" type="text" maxlength="200" value="${esc(r.fonte_preco || '')}"></label>
+        <label class="campo">Produtividade (sacas/ha) <input name="produtividade_sc_ha" type="number" min="0" step="0.1" value="${r.produtividade_sc_ha ?? ''}"></label>
+        <label class="campo">Fonte da produtividade <input name="fonte_produtividade" type="text" maxlength="200" value="${esc(r.fonte_produtividade || '')}"></label>
+        <p class="aviso">${r.dias_do_preco != null ? `Preço de ${r.dias_do_preco} dia(s) atrás.` : 'Sem preço cadastrado.'} Atualizado em ${quando(r.atualizado_em)}.</p>
+        <button class="btn btn-primario" type="submit">Salvar</button></form>`;
+    }).join('');
+  }
+  $('#precos').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const f = e.target, d = formDados(f);
+    ['preco_saca', 'produtividade_sc_ha'].forEach((k) => { d[k] = d[k] == null ? null : Number(d[k]); });
+    try { await api(`/api/admin/referencias/${f.dataset.produto}`, { method: 'PUT', body: JSON.stringify(d) }); carregarPrecos(); }
+    catch (err) { alert(err.message); }
+  });
+
   // ---------- leads ----------
   async function carregarLeads() {
     const lista = await api('/api/admin/leads');
@@ -504,7 +560,7 @@
   });
 
   const abaInicial = (location.hash || '').slice(1);
-  abrirAba(['visao', 'crm', 'clientes', 'leads'].includes(abaInicial) ? abaInicial : 'visao');
+  abrirAba(['visao', 'crm', 'clientes', 'leads', 'precos'].includes(abaInicial) ? abaInicial : 'visao');
 </script>
 </body>
 </html>

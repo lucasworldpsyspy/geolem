@@ -28,6 +28,12 @@
     .maplibregl-popup-content { background: #fff; color: #1a1a1a; font: 13px/1.4 system-ui, sans-serif; border-radius: 8px; }
     .maplibregl-popup-content a { color: #1d7a52; font-weight: 600; }
     .vazio-painel { text-align: center; padding: 60px 20px; color: var(--suave); }
+    .risco { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 4px; }
+    .risco div { background: var(--painel-2); border-radius: 10px; padding: 14px 16px; }
+    .risco b { display: block; font-size: 26px; font-variant-numeric: tabular-nums; }
+    .risco .alto b { color: var(--bad); } .risco .medio b { color: var(--warn); }
+    .risco small { color: var(--suave); font-size: 12.5px; display: block; margin-top: 4px; line-height: 1.4; }
+    .ref { color: var(--suave); font-size: 12px; margin: 10px 0 0; }
     @media (max-width: 960px) { .grade-2, .grade-2b { grid-template-columns: 1fr; } .validade { grid-template-columns: repeat(3, 1fr); } }
   </style>
 </head>
@@ -46,6 +52,12 @@
     </div>
 
     <section class="indicadores" id="indicadores"></section>
+
+    <section class="caixa" id="bloco-risco" hidden>
+      <h2>Valor em risco (estimativa de produção anual)</h2>
+      <div class="risco" id="risco"></div>
+      <p class="ref" id="ref-risco"></p>
+    </section>
 
     <div id="conteudo">
       <div class="grade-2">
@@ -187,10 +199,30 @@
     });
   }
 
+  function desenharRisco(r) {
+    if (!r || !r.carteira.ha) return;
+    const reais = (v) => v == null ? 'sem preço' : Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 });
+    const sacas = (e) => e.sacas == null ? '' : `${fmtN(e.sacas)} sacas · ${fmtN(e.toneladas, 1)} t`;
+    const soja = r.referencias.soja || {}, milho = r.referencias.milho || {};
+    $('#risco').innerHTML = [
+      ['alto', reais(r.eudr_fornecedores.reais), `soja de fornecedores Não conformes (${fmtN(r.eudr_fornecedores.ha)} ha) · ${sacas(r.eudr_fornecedores)}`],
+      ['medio', reais(r.eudr_area_afetada.reais), `só nos hectares com ocorrência (${fmtN(r.eudr_area_afetada.ha)} ha) · ${sacas(r.eudr_area_afetada)}`],
+      ['medio', milho.preco_saca ? reais(r.renovabio_inelegivel.reais) : `${fmtN(r.renovabio_inelegivel.toneladas || 0, 1)} t`,
+        `de milho inelegível no RenovaBio (${fmtN(r.renovabio_inelegivel.ha)} ha) · ${sacas(r.renovabio_inelegivel)}`],
+    ].map(([c, n, t]) => `<div class="${c}"><b>${n}</b><small>${t}</small></div>`).join('');
+    const velho = soja.dias_do_preco != null && soja.dias_do_preco > 30 ? ` <b style="color:var(--warn)">(preço com ${soja.dias_do_preco} dias: atualizar)</b>` : '';
+    $('#ref-risco').innerHTML = `Referências: soja ${soja.preco_saca ? reais(soja.preco_saca) + '/saca' : 'sem preço'} em ${esc(soja.praca || '-')}` +
+      `${soja.data_preco ? ' (' + soja.data_preco.split('-').reverse().join('/') + ', ' + esc(soja.fonte_preco || '') + ')' : ''}${velho}; ` +
+      `produtividade ${fmtN(soja.produtividade_sc_ha)} sc/ha de soja e ${fmtN(milho.produtividade_sc_ha)} sc/ha de milho (${esc(soja.fonte_produtividade || '')}). ` +
+      'Estimativa de ordem de grandeza: a área total do fornecedor inclui reserva e áreas não plantadas.';
+    $('#bloco-risco').hidden = false;
+  }
+
   (async function () {
     try {
       const [d, geo] = await Promise.all([api('/api/carteira/painel'), api('/api/carteira/mapa.geojson')]);
       indicadores(d.resumo);
+      desenharRisco(d.risco);
       if (!d.resumo.areas) {
         $('#conteudo').innerHTML = '<div class="caixa vazio-painel"><h2>Sua carteira está vazia</h2><p>Importe a lista de fornecedores na <a href="/carteira.html">Carteira</a> para ver o painel.</p></div>';
         return;

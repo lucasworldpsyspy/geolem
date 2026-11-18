@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
-from . import contas, licencas
+from . import contas, licencas, mercado, observatorio
 from .db import pool
 from .dependencias import ip as ip_de
 from .dependencias import superadmin
@@ -382,6 +382,76 @@ def exportar_prospects():
         w.writerow(["" if l[c] is None else l[c] for c in cab])
     return Response("﻿" + buf.getvalue(), media_type="text/csv; charset=utf-8",
                     headers={"Content-Disposition": 'attachment; filename="prospects-geolem.csv"'})
+
+
+# ---------- preços de referência ----------
+@rotas.get("/referencias")
+def referencias():
+    with pool.connection() as conn:
+        return mercado.referencias(conn)
+
+
+class Referencia(BaseModel):
+    praca: str = Field(..., max_length=100)
+    preco_saca: float | None = Field(None, ge=0, le=10000)
+    data_preco: date | None = None
+    fonte_preco: str | None = Field(None, max_length=200)
+    produtividade_sc_ha: float | None = Field(None, ge=0, le=1000)
+    fonte_produtividade: str | None = Field(None, max_length=200)
+
+
+@rotas.put("/referencias/{produto}")
+def salvar_referencia(produto: str, p: Referencia, u: dict = Depends(superadmin)):
+    if produto not in mercado.PRODUTOS:
+        raise HTTPException(404, "Produto inválido.")
+    with pool.connection() as conn:
+        conn.execute(
+            """INSERT INTO app.referencias_mercado (produto, praca, preco_saca, data_preco, fonte_preco,
+                                                    produtividade_sc_ha, fonte_produtividade, atualizado_por)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+               ON CONFLICT (produto) DO UPDATE SET praca = EXCLUDED.praca, preco_saca = EXCLUDED.preco_saca,
+                 data_preco = EXCLUDED.data_preco, fonte_preco = EXCLUDED.fonte_preco,
+                 produtividade_sc_ha = EXCLUDED.produtividade_sc_ha, fonte_produtividade = EXCLUDED.fonte_produtividade,
+                 atualizado_em = now(), atualizado_por = EXCLUDED.atualizado_por""",
+            (produto, p.praca, p.preco_saca, p.data_preco, p.fonte_preco, p.produtividade_sc_ha,
+             p.fonte_produtividade, u["id"]))
+    return {"ok": True}
+
+
+# ---------- planejamento de produtores por município ----------
+@rotas.get("/produtores/municipios")
+def produtores_por_municipio():
+    """Números agregados por município (nenhum produtor identificado) cruzados com o que já está no CRM."""
+    with pool.connection() as conn:
+        base = observatorio.dados(conn)["municipios"]
+        crm = conn.execute(
+            """SELECT municipio, count(*) FILTER (WHERE categoria = 'produtor') AS produtores,
+                      count(*) FILTER (WHERE categoria IN ('cliente', 'comprador', 'parceiro')) AS outros
+               FROM app.prospects WHERE municipio IS NOT NULL GROUP BY municipio""").fetchall()
+        leads = conn.execute(
+            """SELECT municipio, count(*) AS n FROM app.leads WHERE municipio IS NOT NULL GROUP BY municipio""").fetchall()
+        aceitos = conn.execute(
+            """SELECT a.municipio, count(*) FILTER (WHERE c.aceito_em IS NOT NULL) AS aceitos, count(*) AS enviados
+               FROM app.convites c JOIN app.areas a ON a.id = c.area_id GROUP BY a.municipio""").fetchall()
+    def por_chave(linhas, campo):
+        d = {}
+        for l in linhas:
+            k = observatorio.chave_municipio((l["municipio"] or "").split("/")[0])
+            d[k] = d.get(k, 0) + (l[campo] or 0)
+        return d
+    prod, outros = por_chave(crm, "produtores"), por_chave(crm, "outros")
+    nleads, acc, env = por_chave(leads, "n"), por_chave(aceitos, "aceitos"), por_chave(aceitos, "enviados")
+    saida = []
+    for m in base:
+        k = observatorio.chave_municipio(m["municipio"])
+        alcancados = prod.get(k, 0)
+        saida.append({**m, "produtores_crm": alcancados, "outros_crm": outros.get(k, 0), "leads": nleads.get(k, 0),
+                      "convites_enviados": env.get(k, 0), "convites_aceitos": acc.get(k, 0),
+                      "cobertura_pct": round(100 * alcancados / m["imoveis"], 1) if m["imoveis"] else 0})
+    # Prioridade: muitos imóveis, muita pressão de compliance (desmatamento pós-2020) e pouca cobertura ainda
+    for s in saida:
+        s["prioridade"] = round(s["imoveis"] * (1 + s["pct_pos2020"] / 100) * (1 - s["cobertura_pct"] / 100))
+    return sorted(saida, key=lambda s: -s["prioridade"])
 
 
 # ---------- leads do site ----------

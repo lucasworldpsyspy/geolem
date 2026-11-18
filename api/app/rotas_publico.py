@@ -9,7 +9,7 @@ from fastapi.responses import HTMLResponse, Response
 from pydantic import BaseModel, Field
 from psycopg.types.json import Jsonb
 
-from . import contas, observatorio, regras
+from . import contas, convites, observatorio, regras
 from .analise import ErroAnalise, analisar
 from .db import pool
 from .dependencias import ip as ip_de
@@ -176,6 +176,42 @@ def assinar_boletim(p: PedidoBoletim, request: Request):
                      (email, p.municipio))
         _gravar_lead(conn, p, email, "boletim", {"municipio": p.municipio}, ip, municipio=p.municipio, boletim=True)
     return {"ok": True}
+
+
+@rotas.get("/convite/{token}")
+def ver_convite(token: str):
+    with pool.connection() as conn:
+        c = convites.ver(conn, token)
+    if not c:
+        raise HTTPException(404, "Convite não encontrado.")
+    return c
+
+
+class AceiteConvite(BaseModel):
+    nome: str = Field(..., min_length=2, max_length=120)
+    email: str = Field(..., max_length=200)
+    telefone: str | None = Field(None, max_length=40)
+    consentimento: bool = False
+
+
+@rotas.post("/convite/{token}")
+def aceitar_convite(token: str, p: AceiteConvite, request: Request):
+    if not p.consentimento:
+        raise HTTPException(422, "Para continuar, marque a autorização de uso dos seus dados.")
+    try:
+        email = contas.normalizar_email(p.email)
+    except contas.ErroConta as e:
+        raise HTTPException(422, str(e)) from e
+    ip = ip_de(request) or "-"
+    if limite_formulario_ip.bloqueado(ip):
+        raise HTTPException(429, "Muitos pedidos. Tente de novo em uma hora.")
+    limite_formulario_ip.falhou(ip)
+    with pool.connection() as conn:
+        try:
+            r = convites.aceitar(conn, token, p.nome.strip(), email, (p.telefone or "").strip() or None, ip)
+        except ValueError as e:
+            raise HTTPException(422, str(e)) from e
+    return {"ok": True, "ja_aceito": r["ja_aceito"]}
 
 
 @rotas.get("/sair", response_class=HTMLResponse)
