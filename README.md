@@ -97,8 +97,10 @@ O ano PRODES vai de agosto a julho, então o sistema usa a **data da imagem** qu
 O PRODES é anual e sai com atraso; o **DETER** cobre os meses que o PRODES ainda não publicou (um desmatamento de
 março aparece no laudo na mesma semana em que o INPE publica o alerta).
 
-**MapBiomas Alerta (opcional):** crie uma conta gratuita em https://plataforma.alerta.mapbiomas.org e preencha
-`MAPBIOMAS_EMAIL` e `MAPBIOMAS_SENHA` no `.env`. A carga `todas` passa a incluir a fonte, e a verificação aparece no
+**MapBiomas Alerta (opcional):** crie uma conta gratuita em https://plataforma.alerta.mapbiomas.org e rode
+`bash deploy/configurar-mapbiomas.sh` (pede o e-mail e a senha sem mostrar na tela e grava no `.env`); depois
+`docker compose up -d api worker` e `docker compose exec api python -m ingest mapbiomas_alerta`. Carga de 17/11/2026:
+1.792 alertas validados na região (2019 a junho de 2026), em cerca de 1,5 minuto. A carga `todas` passa a incluir a fonte, e a verificação aparece no
 laudo. Sem a conta, essa verificação não aparece (o laudo não marca "Atenção" por uma base opcional).
 Sobreposições menores que `AREA_MINIMA_HA` (padrão 0,1 ha) são ignoradas, porque costumam ser ruído de borda entre bases.
 
