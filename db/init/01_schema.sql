@@ -83,6 +83,21 @@ CREATE TABLE IF NOT EXISTS geo.terras_indigenas (
   geom       geometry(MultiPolygon, 4326) NOT NULL
 );
 
+-- Territórios de povos e comunidades: quilombolas e assentamentos da reforma agrária (INCRA)
+CREATE TABLE IF NOT EXISTS geo.territorios (
+  id         bigserial PRIMARY KEY,
+  fonte      text NOT NULL,
+  carga_id   integer REFERENCES geo.cargas(id),
+  tipo       text NOT NULL CHECK (tipo IN ('quilombola', 'assentamento')),
+  id_origem  text,
+  nome       text,
+  municipio  text,
+  uf         text,
+  fase       text,
+  familias   integer,
+  geom       geometry(MultiPolygon, 4326) NOT NULL
+);
+
 -- Imóveis rurais: SIGEF (INCRA) e CAR (SICAR)
 CREATE TABLE IF NOT EXISTS geo.imoveis (
   id                bigserial PRIMARY KEY,
@@ -111,11 +126,21 @@ CREATE TABLE IF NOT EXISTS geo.analises (
   geom           geometry(MultiPolygon, 4326) NOT NULL
 );
 
+-- Imagens de satélite (antes e depois) de cada análise. O SHA-256 de cada PNG fica em detalhes->imagens,
+-- coberto pelo código de integridade do laudo.
+CREATE TABLE IF NOT EXISTS geo.analises_imagens (
+  protocolo  text NOT NULL REFERENCES geo.analises(protocolo) ON DELETE CASCADE,
+  tipo       text NOT NULL,  -- antes | depois
+  png        bytea NOT NULL,
+  PRIMARY KEY (protocolo, tipo)
+);
+
 CREATE INDEX IF NOT EXISTS desmatamento_geom_idx ON geo.desmatamento USING gist (geom);
 CREATE INDEX IF NOT EXISTS desmatamento_fonte_idx ON geo.desmatamento (fonte);
 CREATE INDEX IF NOT EXISTS embargos_geom_idx ON geo.embargos USING gist (geom);
 CREATE INDEX IF NOT EXISTS ucs_geom_idx ON geo.unidades_conservacao USING gist (geom);
 CREATE INDEX IF NOT EXISTS tis_geom_idx ON geo.terras_indigenas USING gist (geom);
+CREATE INDEX IF NOT EXISTS territorios_geom_idx ON geo.territorios USING gist (geom);
 CREATE INDEX IF NOT EXISTS imoveis_geom_idx ON geo.imoveis USING gist (geom);
 CREATE INDEX IF NOT EXISTS imoveis_codigo_idx ON geo.imoveis (codigo);
 CREATE INDEX IF NOT EXISTS imoveis_nome_trgm_idx ON geo.imoveis USING gin (nome gin_trgm_ops);

@@ -34,6 +34,10 @@
     li { display: flex; justify-content: space-between; gap: 10px; padding: 8px 0; border-top: 1px solid var(--borda); }
     li:first-child { border-top: 0; }
     .selo { flex: none; font-size: 12px; font-weight: 700; border-radius: 99px; padding: 2px 9px; height: fit-content; }
+    .fotos { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .fotos img { width: 100%; aspect-ratio: 3 / 4; object-fit: cover; border-radius: 8px; display: block; }
+    .fotos figcaption { font-size: 12px; color: var(--suave); margin-top: 4px; }
+    .fotos figure { margin: 0; }
     .hash { font: 12px/1.4 ui-monospace, Consolas, monospace; overflow-wrap: anywhere; color: var(--suave); }
     .botao { display: block; text-align: center; background: var(--verde); color: #fff; text-decoration: none;
              font-weight: 600; padding: 12px; border-radius: 10px; }
@@ -87,12 +91,22 @@
         `<div class="cartao"><h2>Verificações</h2><ul>${r.checks.map((c) =>
           `<li><span>${esc(c.titulo)}${c.ha && c.status !== 'ok' ? ` · ${fmtHa(c.ha)}` : ''}</span>` +
           `<span class="selo s-${c.status}">${ROTULO[c.status] || esc(c.status)}</span></li>`).join('')}</ul></div>` +
+        imagens(r) +
         `<div class="cartao"><h2>Código de integridade (SHA-256)</h2><div class="hash">${esc(r.integridade)}</div></div>` +
         `<a class="botao" href="/api/analises/${encodeURIComponent(r.protocolo)}/laudo.pdf">Abrir o laudo em PDF</a>`;
     })
     .catch((e) => e.message === '404'
       ? falha('Protocolo não encontrado', `Nenhum laudo com o protocolo "${protocolo}" foi emitido pelo GeoLEM.`)
       : falha('Não foi possível consultar', 'Tente de novo em instantes.'));
+  function imagens(r) {
+    const ok = (r.imagens || []).filter((m) => m.sha256);
+    if (!ok.length) return '';
+    const base = `/api/analises/${encodeURIComponent(r.protocolo)}/imagens/`;
+    return `<div class="cartao"><h2>Satélite: antes e depois</h2><div class="fotos">` + ok.map((m) =>
+      `<figure><img src="${base}${m.tipo}.png" alt="${esc(m.titulo)}" loading="lazy">` +
+      `<figcaption>${m.tipo === 'antes' ? 'Antes' : 'Depois'} · ${esc(m.data.split('-').reverse().join('/'))}</figcaption></figure>`
+    ).join('') + `</div></div>`;
+  }
 </script>
 </body>
 </html>

@@ -24,6 +24,8 @@ geolem/
 │   │   ├── regras.py       regras de conformidade (EUDR, Código Florestal, RL)
 │   │   ├── tiles.py        vector tiles (MVT) direto do banco
 │   │   ├── laudo_pdf.py    laudo em PDF com mapa, QR code e código de integridade
+│   │   ├── imagens.py      imagens Sentinel-2 de antes e depois da área
+│   │   ├── eudr.py         exportação GeoJSON para a declaração do EUDR
 │   │   └── arquivos.py     leitura de KML, KMZ, SHP (zip), GeoJSON e GPKG
 │   ├── ingest/             carga das bases públicas
 │   │   ├── fontes.py       catálogo de fontes e mapeamento de campos
@@ -49,14 +51,20 @@ geolem/
 | `ucs_federais_icmbio` | ICMBio via IBAMA (ArcGIS) | UCs federais |
 | `ucs_estaduais_sfb` | SFB via IBAMA (ArcGIS) | UCs estaduais |
 | `tis_funai` | FUNAI via IBAMA (ArcGIS) | Terras Indígenas |
+| `quilombolas_incra` | INCRA via IBAMA (ArcGIS) | territórios quilombolas |
+| `assentamentos_incra` | INCRA via IBAMA (ArcGIS) | assentamentos da reforma agrária |
 | `sigef_privado` | INCRA via IBAMA (ArcGIS) | imóveis certificados |
 | CAR (manual) | SICAR | imóveis e reserva legal declarada |
 
 Cada carga fica registrada em `geo.cargas` com data, origem e número de registros. O laudo lista essas datas.
 
 Carga de 17/11/2026, na região padrão (LEM e entorno): 21.304 polígonos PRODES anuais e 1.643 do acumulado até 2000,
-165 embargos, 3.683 imóveis SIGEF e 5 UCs (todas vindas da base do INPE). As camadas de UC do ICMBio e do SFB e a de
-Terras Indígenas não têm feições na região. A carga completa leva cerca de 2 minutos.
+165 embargos, 3.683 imóveis SIGEF, 5 UCs (todas vindas da base do INPE) e 9 assentamentos do INCRA. As camadas de UC
+do ICMBio e do SFB, a de Terras Indígenas e a de territórios quilombolas não têm feições na região padrão (o quilombo
+mais próximo, Lajeado, fica em Dianópolis/TO). A carga completa leva cerca de 2 minutos.
+
+Algumas camadas do INCRA chegam com letras acentuadas corrompidas na origem; a carga corrige isso
+(`_reparar_acentos` em `ingest/fontes.py`).
 
 **LGPD:** o nome e o CPF/CNPJ dos embargados não são lidos nem guardados.
 
@@ -70,6 +78,9 @@ Terras Indígenas não têm feições na região. A carga completa leva cerca de
 | Embargo IBAMA | **Não conforme** |
 | UC de Proteção Integral / Terra Indígena | **Não conforme** |
 | UC de Uso Sustentável | **Atenção** |
+| Território quilombola reconhecido (portaria, decreto ou título) | **Não conforme** |
+| Território quilombola em estudo (RTID) | **Atenção** |
+| Assentamento da reforma agrária | **Atenção** |
 | Reserva Legal abaixo de 20% | **Atenção**, com o déficit em ha |
 | Base não carregada | **Atenção**: o sistema nunca diz "Conforme" sem ter consultado a base |
 
@@ -108,6 +119,23 @@ esse código, e se alguém alterar o laudo no banco a página mostra "Conteúdo 
 Em produção, defina `URL_PUBLICA` no `.env` com o domínio real (ex.: `https://laudos.seudominio.com.br`).
 Com `localhost`, o QR code só abre no próprio computador.
 
+### Imagens de satélite: antes e depois
+Cada análise busca duas imagens Sentinel-2 da área (10 m, cor natural):
+- **Antes:** a melhor cena do período seco de 2020 (junho a setembro), anterior à data de corte do EUDR.
+- **Depois:** a melhor cena do período seco mais recente.
+
+As cenas vêm do catálogo público do Microsoft Planetary Computer, sem custo e sem chave. Os dados Copernicus permitem
+uso comercial com atribuição, que o laudo imprime. Cada imagem é montada com cenas de uma única passagem do satélite,
+então tem uma data só. O PNG fica gravado em `geo.analises_imagens`, e o SHA-256 dele entra no código de integridade:
+o laudo de amanhã mostra exatamente a mesma imagem. A busca leva de 3 a 6 segundos. Se o serviço estiver fora do ar,
+a análise sai normalmente e o laudo informa que a imagem está indisponível. Para desligar, use `IMAGENS_SATELITE=0`.
+
+### Exportação para o EUDR
+`GET /api/analises/{protocolo}/eudr.geojson` devolve a geolocalização da área no formato GeoJSON usado na declaração
+de diligência do sistema TRACES da União Europeia: WGS84, 6 casas decimais, com as propriedades `ProductionPlace`,
+`ProducerCountry` e `Area` (ha). No painel, é o botão "Geolocalização para o EUDR".
+Antes do primeiro uso real, confira com o importador se o sistema dele exige alguma propriedade a mais.
+
 ### Testes
 ```bash
 docker compose exec api python -m pytest -q
@@ -138,7 +166,8 @@ carrega as bases e agenda as tarefas. **Ele mostra a senha de acesso uma única 
 O usuário é `geolem`; para trocar a senha, rode `bash /opt/geolem/deploy/trocar-senha.sh` no servidor.
 
 **Atualizar** depois de mudar o código: faça o commit e rode de novo `bash deploy/enviar.sh root@IP_DO_SERVIDOR`.
-Só vai o que está no git; o `.env`, o banco e os backups do servidor não são tocados.
+Só vai o que está no git; o `.env`, o banco e os backups do servidor não são tocados. Tabelas novas do
+`db/init/01_schema.sql` são criadas automaticamente (o script só cria o que ainda não existe).
 
 **Tarefas agendadas** (`/etc/cron.d/geolem`): bases públicas atualizadas toda segunda às 3h
 (log em `/var/log/geolem-bases.log`) e backup do banco todo dia às 2h.
@@ -163,14 +192,18 @@ Para restaurar num banco vazio:
 | POST | `/api/analises` | analisa uma área (`geometria` e/ou `imovel_id`, `reserva_legal_ha`) |
 | GET | `/api/analises/{protocolo}` | confere um laudo emitido (inclui `integridade_conferida`) |
 | GET | `/api/analises/{protocolo}/laudo.pdf` | laudo em PDF (`?baixar=true` força o download) |
+| GET | `/api/analises/{protocolo}/imagens/{antes\|depois}.png` | imagens de satélite gravadas com a análise |
+| GET | `/api/analises/{protocolo}/eudr.geojson` | geolocalização no formato da declaração do EUDR |
 | GET | `/verificar/{protocolo}` | página pública de verificação (destino do QR code) |
 | POST | `/api/arquivos/geometria` | converte KML/KMZ/SHP/GeoJSON/GPKG em GeoJSON |
 | GET | `/api/tiles/{camada}/{z}/{x}/{y}.pbf` | vector tiles para o mapa |
 
 ## Roteiro
 - **Fase 2 (esta):** bases reais, PostGIS, API, importação de arquivos, laudo com protocolo
-- **Feito na fase 2:** laudo em PDF gerado no servidor, com QR code e código de integridade
-- **Próximos passos da fase 2:** DETER Cerrado (alertas recentes), MapBiomas Alerta, APP por hidrografia
+- **Feito na fase 2:** laudo em PDF gerado no servidor, com QR code e código de integridade; imagens de satélite de
+  antes e depois; territórios quilombolas e assentamentos; exportação GeoJSON para o EUDR
+- **Próximos passos:** análise em lote e monitoramento da carteira com alertas; MapBiomas Alerta, DETER Cerrado e APP
+  por hidrografia
 - **Fase 3 (produto):** login, empresas e carteiras de fornecedores, monitoramento contínuo com alertas, integração com ERPs do agro (Siagri, TOTVS, SAP), frontend em React
 
 ## Modelo de negócio (hipótese)

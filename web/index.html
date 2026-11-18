@@ -71,6 +71,14 @@
     .geral.ok { background: rgba(63,184,127,.14); border: 1px solid var(--ok); }
     .geral.warn { background: rgba(245,165,36,.13); border: 1px solid var(--warn); }
     .geral.bad { background: rgba(229,72,77,.14); border: 1px solid var(--bad); }
+    .imagens { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin: 4px 0 10px; }
+    .imagens figure { margin: 0; }
+    .imagens .quadro { position: relative; display: block; border-radius: 6px; overflow: hidden; background: #0004; }
+    .imagens img { width: 100%; height: 100%; display: block; }
+    .imagens svg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+    .imagens figcaption { font-size: 11px; color: var(--suave); margin-top: 3px; line-height: 1.3; }
+    .imagens .sem { font-size: 11px; color: var(--suave); padding: 8px; border: 1px dashed var(--borda, #5556); border-radius: 6px; }
+    #btn-eudr { margin-top: 6px; }
     .protocolo { font-size: 12px; color: var(--suave); margin: 6px 0 8px; font-variant-numeric: tabular-nums; }
     .check { border-left: 3px solid var(--borda); padding: 6px 0 6px 10px; margin-bottom: 6px; }
     .check.ok { border-color: var(--ok); } .check.info { border-color: var(--info); }
@@ -161,6 +169,8 @@
         <button id="btn-analisar" class="btn btn-primario btn-largo" type="button" disabled>Analisar conformidade</button>
         <div id="resultado" hidden></div>
         <button id="btn-laudo" class="btn btn-largo" type="button" hidden>⎙ Laudo em PDF com QR code</button>
+        <button id="btn-eudr" class="btn btn-largo" type="button" hidden
+                title="Arquivo de geolocalização para a declaração de diligência no sistema TRACES da União Europeia">⇩ Geolocalização para o EUDR (GeoJSON)</button>
       </section>
 
       <section class="bloco">
@@ -214,6 +224,7 @@
       { id: 'embargos', nome: 'Embargos IBAMA', cor: '#ff2d55', fill: 0.35 },
       { id: 'ucs', nome: 'Unidades de Conservação', cor: '#3e9bff', fill: 0.12 },
       { id: 'tis', nome: 'Terras Indígenas', cor: '#c084fc', fill: 0.2 },
+      { id: 'territorios', nome: 'Quilombolas e assentamentos', cor: '#ff8a3d', fill: 0.15 },
     ];
     const DESCREVER = {
       imoveis: (p) => `<strong>${esc(p.nome || 'Imóvel sem nome')}</strong>${esc(p.tipo)} ${esc(p.codigo || '')}<br>${p.area_ha ? fmtHa(p.area_ha) : ''}` +
@@ -222,6 +233,8 @@
       embargos: (p) => `<strong>Embargo TAD ${esc(p.numero_tad || '?')}</strong>${esc(p.data_embargo || '')}<br>${esc(p.infracao || '')}`,
       ucs: (p) => `<strong>${esc(p.nome)}</strong>${esc(p.categoria || '')} · ${p.grupo === 'PI' ? 'Proteção Integral' : 'Uso Sustentável'} · ${esc(p.esfera || '')}`,
       tis: (p) => `<strong>${esc(p.nome)}</strong>${esc(p.etnia || '')} · ${esc(p.fase || '')}`,
+      territorios: (p) => `<strong>${esc(p.nome || 'Sem nome')}</strong>${p.tipo === 'quilombola' ? 'Território quilombola' : 'Assentamento'}` +
+        ` · ${esc(p.fase || '')}${p.familias ? `<br>${esc(p.familias)} famílias` : ''}`,
     };
 
     const vazio = () => ({ type: 'FeatureCollection', features: [] });
@@ -354,6 +367,7 @@
       map.getSource('conflitos').setData(vazio());
       $('#resultado').hidden = true;
       $('#btn-laudo').hidden = true;
+      $('#btn-eudr').hidden = true;
       $('#btn-analisar').disabled = false;
       const im = area.imovel || {};
       const linhas = [
@@ -453,12 +467,35 @@
         `<div class="geral ${r.geral}"><span class="selo ${r.geral}">${ROTULO[r.geral]}</span><div>${esc(r.resumo)}` +
         `<small>${com} verificação(ões) com ocorrência · área de ${fmtHa(r.area.area_ha)}</small></div></div>` +
         `<div class="protocolo">Protocolo ${esc(r.protocolo)}</div>` +
+        htmlImagens(r) +
         r.checks.map((c) =>
           `<div class="check ${c.status}"><div class="check-topo"><span class="check-titulo">${esc(c.titulo)}</span>` +
           `<span class="selo ${c.status}">${ROTULO[c.status]}</span></div><div class="check-base">${esc(c.base)}</div>` +
           `<ul>${c.itens.map((i) => `<li>${itemTexto(i)}</li>`).join('')}</ul></div>`).join('');
       $('#resultado').hidden = false;
       $('#btn-laudo').hidden = false;
+      $('#btn-eudr').hidden = false;
+    }
+
+    // Contorno da área sobre o recorte: viewBox em graus (latitude invertida, pois o SVG cresce para baixo)
+    function contornoSvg(geom, [x0, y0, x1, y1]) {
+      const pols = geom.type === 'Polygon' ? [geom.coordinates] : geom.coordinates;
+      const d = pols.flatMap((pol) => pol.map((anel) => 'M' + anel.map(([x, y]) => `${x},${-y}`).join('L') + 'Z')).join('');
+      return `<svg viewBox="${x0} ${-y1} ${x1 - x0} ${y1 - y0}" preserveAspectRatio="none">` +
+        `<path d="${d}" fill="none" stroke="#ffe14d" stroke-width="2" vector-effect="non-scaling-stroke"/></svg>`;
+    }
+
+    // Satélite de antes (2020, antes do corte do EUDR) e depois (período seco mais recente)
+    function htmlImagens(r) {
+      if (!r.imagens || !r.imagens.length) return '';
+      return '<div class="imagens">' + r.imagens.map((m) => {
+        if (!m.sha256) return `<div class="sem">${esc(m.titulo)}<br>${esc(m.indisponivel || 'Imagem indisponível.')}</div>`;
+        const data = m.data.split('-').reverse().join('/');
+        const url = `/api/analises/${encodeURIComponent(r.protocolo)}/imagens/${m.tipo}.png`;
+        return `<figure><a class="quadro" style="aspect-ratio:${m.largura_px}/${m.altura_px}" href="${url}" target="_blank" rel="noopener">` +
+          `<img src="${url}" alt="${esc(m.titulo)}" loading="lazy">${contornoSvg(r.area.geometria, m.bbox)}</a>` +
+          `<figcaption>${m.tipo === 'antes' ? 'Antes' : 'Depois'} · ${data}</figcaption></figure>`;
+      }).join('') + '</div>';
     }
 
     // ---------- Laudo ----------
@@ -466,6 +503,12 @@
     $('#btn-laudo').addEventListener('click', () => {
       const r = estado.resultado;
       if (r) window.open(`/api/analises/${encodeURIComponent(r.protocolo)}/laudo.pdf`, '_blank', 'noopener');
+    });
+    $('#btn-eudr').addEventListener('click', () => {
+      const r = estado.resultado;
+      if (!r) return;
+      if (r.geral === 'bad' && !confirm('Esta área tem resultado "Não conforme". Exportar a geolocalização mesmo assim?')) return;
+      location.href = `/api/analises/${encodeURIComponent(r.protocolo)}/eudr.geojson`;
     });
 
     // ---------- Camadas e mapa base ----------

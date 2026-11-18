@@ -12,6 +12,7 @@ from . import tiles
 from .analise import ErroAnalise, analisar
 from .arquivos import ErroArquivo, ler_geometria
 from .config import REGIAO_BBOX, TAMANHO_MAX_ARQUIVO, URL_PUBLICA, WEB_DIR
+from .eudr import geojson_eudr
 from .laudo_pdf import codigo_integridade, gerar_pdf
 from .db import pool
 
@@ -156,10 +157,36 @@ def _analise_gravada(protocolo: str) -> dict:
 def laudo_pdf(protocolo: str, baixar: bool = False):
     """Laudo em PDF, sempre gerado a partir da análise gravada (nunca de dados enviados pelo navegador)."""
     r = _analise_gravada(protocolo)
-    pdf = gerar_pdf(r, f"{URL_PUBLICA}/verificar/{r['protocolo']}")
+    pdf = gerar_pdf(r, f"{URL_PUBLICA}/verificar/{r['protocolo']}", _imagens(r["protocolo"]))
     modo = "attachment" if baixar else "inline"
     return Response(pdf, media_type="application/pdf",
                     headers={"Content-Disposition": f'{modo}; filename="laudo-{r["protocolo"]}.pdf"'})
+
+
+def _imagens(protocolo: str) -> dict[str, bytes]:
+    with pool.connection() as conn:
+        linhas = conn.execute("SELECT tipo, png FROM geo.analises_imagens WHERE protocolo = %s",
+                              (protocolo,)).fetchall()
+    return {l["tipo"]: bytes(l["png"]) for l in linhas}
+
+
+@app.get("/api/analises/{protocolo}/imagens/{tipo}.png")
+def imagem_satelite(protocolo: str, tipo: str):
+    """Recorte Sentinel-2 de antes ou depois gravado com a análise."""
+    if tipo not in ("antes", "depois"):
+        raise HTTPException(404, "Imagem inexistente.")
+    png = _imagens(protocolo.strip().upper()).get(tipo)
+    if not png:
+        raise HTTPException(404, "Imagem não disponível para este protocolo.")
+    return Response(png, media_type="image/png", headers={"Cache-Control": "public, max-age=86400, immutable"})
+
+
+@app.get("/api/analises/{protocolo}/eudr.geojson")
+def exportar_eudr(protocolo: str):
+    """Geolocalização da área no formato GeoJSON da declaração de diligência do EUDR (sistema TRACES da UE)."""
+    r = _analise_gravada(protocolo)
+    return Response(json.dumps(geojson_eudr(r), ensure_ascii=False, indent=1), media_type="application/geo+json",
+                    headers={"Content-Disposition": f'attachment; filename="eudr-{r["protocolo"]}.geojson"'})
 
 
 @app.get("/verificar/{protocolo}", include_in_schema=False)

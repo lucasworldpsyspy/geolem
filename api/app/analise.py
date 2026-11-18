@@ -7,9 +7,9 @@ from datetime import datetime, timezone
 
 from psycopg.types.json import Jsonb
 
-from . import regras
-from .config import AREA_MAXIMA_HA, AREA_MINIMA_HA
-from .laudo_pdf import codigo_integridade
+from . import imagens, regras
+from .config import AREA_MAXIMA_HA, AREA_MINIMA_HA, IMAGENS_SATELITE
+from .laudo_pdf import FUSO_BAHIA, codigo_integridade
 
 
 class ErroAnalise(ValueError):
@@ -74,7 +74,8 @@ def analisar(conn, geometria: dict, nome: str | None = None, imovel: dict | None
                        ST_Area(a.g::geography) / 10000.0 AS ha,
                        ST_X(ST_PointOnSurface(a.g)) AS lon,
                        ST_Y(ST_PointOnSurface(a.g)) AS lat,
-                       ST_AsGeoJSON(a.g, 6) AS geom_json
+                       ST_AsGeoJSON(a.g, 6) AS geom_json,
+                       ST_XMin(a.g) AS x0, ST_YMin(a.g) AS y0, ST_XMax(a.g) AS x1, ST_YMax(a.g) AS y1
                 FROM a""",
                 {"g": g},
             )
@@ -90,16 +91,19 @@ def analisar(conn, geometria: dict, nome: str | None = None, imovel: dict | None
         checks: list[dict] = []
         conflitos: list[dict] = []
 
-        def adicionar(id_: str, titulo: str, base: str, tabela: str, itens: list[dict], status_se_houver: str):
-            """itens: [{descricao, ha, geom_json?}]"""
-            if tabela not in bases:
+        def adicionar(id_: str, titulo: str, base: str, tabela: str, itens: list[dict], status_se_houver: str,
+                      fonte: str | None = None):
+            """itens: [{descricao, ha, geoms?, status?}]. `fonte` exige aquela carga (tabelas com várias fontes)."""
+            carregada = tabela in bases and (fonte is None or any(b["fonte"] == fonte for b in bases[tabela]))
+            if not carregada:
                 checks.append({"id": id_, "titulo": titulo, "base": base, "status": "warn", "ha": 0,
                                "itens": [{"descricao": "Base ainda não carregada no sistema. Verificação não realizada.", "ha": None}]})
                 return
             for i in itens:
+                st = i.pop("status", status_se_houver)
                 for gj in i.pop("geoms", []):
                     conflitos.append({"type": "Feature", "geometry": json.loads(gj),
-                                      "properties": {"status": status_se_houver, "rotulo": titulo}})
+                                      "properties": {"status": st, "rotulo": titulo}})
             checks.append({
                 "id": id_, "titulo": titulo, "base": base,
                 "status": status_se_houver if itens else "ok",
@@ -171,14 +175,39 @@ def analisar(conn, geometria: dict, nome: str | None = None, imovel: dict | None
             for r in tis
         ], "bad")
 
-        # 8. Reserva Legal
+        # 8-9. Territórios quilombolas e assentamentos (INCRA)
+        ter = _sobreposicoes(cur, "geo.territorios", "t.tipo, t.nome, t.municipio, t.uf, t.fase, t.familias", g)
+
+        def desc_territorio(r):
+            onde = f", {r['municipio'].title()}/{r['uf']}" if r["municipio"] and r["uf"] else ""
+            familias = f", {r['familias']} famílias" if r["familias"] else ""
+            return f"{r['nome'] or 'sem nome'} ({r['fase'] or 'fase não informada'}{onde}{familias})"
+
+        quilombos = [r for r in ter if r["tipo"] == "quilombola"]
+        st_quil = max((regras.status_quilombo(r["fase"]) for r in quilombos), key=lambda s: regras.ORDEM[s],
+                      default="bad")
+        adicionar("quilombolas", "Territórios quilombolas",
+                  "INCRA. Reconhecido (portaria, decreto ou título): Não conforme; em estudo: Atenção",
+                  "geo.territorios", [
+                      {"descricao": desc_territorio(r), "ha": round(r["ha"], 2), "geoms": [r["geom_json"]],
+                       "status": regras.status_quilombo(r["fase"])}
+                      for r in quilombos
+                  ], st_quil, fonte="quilombolas_incra")
+        adicionar("assentamentos", "Assentamentos da reforma agrária",
+                  "INCRA. Área pública destinada à reforma agrária: exige análise da regularidade",
+                  "geo.territorios", [
+                      {"descricao": desc_territorio(r), "ha": round(r["ha"], 2), "geoms": [r["geom_json"]]}
+                      for r in ter if r["tipo"] == "assentamento"
+                  ], "warn", fonte="assentamentos_incra")
+
+        # 10. Reserva Legal
         rl = reserva_legal_ha if reserva_legal_ha is not None else (imovel or {}).get("reserva_legal_ha")
         st_rl, texto_rl = regras.avaliar_reserva_legal(rl, area["ha"])
         checks.append({"id": "reserva_legal", "titulo": "Reserva Legal (mínimo 20%)",
                        "base": "Art. 12, II, da Lei 12.651/2012 (Cerrado fora da Amazônia Legal)",
                        "status": st_rl, "ha": rl or 0, "itens": [{"descricao": texto_rl, "ha": None}]})
 
-        # 9. Imóveis sobrepostos (identificação, não pesa no resultado)
+        # 11. Imóveis sobrepostos (identificação, não pesa no resultado)
         imv = _sobreposicoes(cur, "geo.imoveis", "t.id, t.tipo, t.codigo, t.nome", g)
         if "geo.imoveis" in bases:
             checks.append({
@@ -210,6 +239,15 @@ def analisar(conn, geometria: dict, nome: str | None = None, imovel: dict | None
             "bases": [b for lst in bases.values() for b in lst],
             "parametros": {"area_minima_ha": AREA_MINIMA_HA},
         }
+        # Imagens de satélite: os metadados (data, cenas, SHA-256 do PNG) entram no código de integridade
+        pngs: dict[str, bytes] = {}
+        if IMAGENS_SATELITE:
+            resultado["imagens"] = []
+            for meta, png in imagens.imagens_antes_depois((area["x0"], area["y0"], area["x1"], area["y1"]),
+                                                          agora.astimezone(FUSO_BAHIA).date()):
+                resultado["imagens"].append(meta)
+                if png:
+                    pngs[meta["tipo"]] = png
         # Gravado junto e impresso no PDF: qualquer alteração posterior no conteúdo muda o código
         resultado["integridade"] = codigo_integridade(resultado)
 
@@ -219,5 +257,8 @@ def analisar(conn, geometria: dict, nome: str | None = None, imovel: dict | None
             (protocolo, resultado["area"]["nome"], (imovel or {}).get("id"), area["ha"], geral,
              Jsonb(resultado), area["geom_json"]),
         )
+        for tipo, png in pngs.items():
+            cur.execute("INSERT INTO geo.analises_imagens (protocolo, tipo, png) VALUES (%s, %s, %s)",
+                        (protocolo, tipo, png))
     conn.commit()
     return resultado

@@ -42,6 +42,16 @@ def status_uc(grupo: str | None) -> str:
     return "bad" if grupo == "PI" else "warn"
 
 
+# Fases em que o território quilombola já foi reconhecido formalmente (portaria, decreto ou título)
+FASES_QUILOMBO_RECONHECIDO = ("TITUL", "DECRETO", "PORTARIA")
+
+
+def status_quilombo(fase: str | None) -> str:
+    """Território reconhecido: Não conforme. Em estudo (RTID, abertura de processo): Atenção."""
+    f = (fase or "").upper()
+    return "bad" if any(p in f for p in FASES_QUILOMBO_RECONHECIDO) else "warn"
+
+
 def avaliar_reserva_legal(reserva_ha: float | None, area_ha: float) -> tuple[str, str]:
     if reserva_ha is None:
         return "info", "Não informada. Informe a reserva legal declarada no CAR para verificar."

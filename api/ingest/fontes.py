@@ -3,6 +3,7 @@
 Para adicionar uma base: crie um `Fonte` com o leitor (WFS ou ArcGIS) e a função que
 mapeia os atributos de origem para as colunas da tabela de destino.
 """
+import re
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
@@ -11,6 +12,7 @@ from . import clientes
 
 TERRABRASILIS = "https://terrabrasilis.dpi.inpe.br/geoserver/ows"
 IBAMA = "https://pamgia.ibama.gov.br/server/rest/services/01_Publicacoes_Bases"
+IBAMA_SINC = "https://pamgia.ibama.gov.br/server/rest/services/BasesSincronizadas"
 
 # Colunas de cada tabela de destino (além de fonte, carga_id e geom)
 COLUNAS = {
@@ -19,6 +21,7 @@ COLUNAS = {
                      "infracao", "situacao_desmatamento", "area_embargada_ha"],
     "geo.unidades_conservacao": ["id_origem", "nome", "categoria", "grupo", "esfera"],
     "geo.terras_indigenas": ["id_origem", "nome", "etnia", "fase"],
+    "geo.territorios": ["id_origem", "tipo", "nome", "municipio", "uf", "fase", "familias"],
     "geo.imoveis": ["tipo", "codigo", "nome", "municipio", "uf", "situacao"],
 }
 
@@ -46,10 +49,24 @@ def data(v) -> date | None:
         return None
 
 
+def _reparar_acentos(s: str) -> str:
+    """Algumas camadas do INCRA chegam com o 1º byte UTF-8 de letras acentuadas (0xC3) trocado por U+FFFD e o 2º
+    byte solto (como surrogate ou caractere de controle C1). Em português, toda letra acentuada começa com 0xC3,
+    então dá para reconstruir: "FAM" U+FFFD 0x8D "LIA" -> "FAMÍLIA"."""
+    if "�" not in s:
+        return s
+
+    def trocar(m: re.Match) -> str:
+        b = ord(m.group(1)) & 0xFF
+        return bytes([0xC3, b]).decode("utf-8", "replace")
+
+    return re.sub("�([\udc80-\udcbf\u0080-¿])", trocar, s)
+
+
 def texto(v) -> str | None:
     if v is None:
         return None
-    s = str(v).strip()
+    s = _reparar_acentos(str(v).strip())
     return s or None
 
 
@@ -143,6 +160,18 @@ def m_embargo(p: dict) -> dict:
     }
 
 
+def m_quilombo(p: dict) -> dict:
+    return {"id_origem": texto(p.get("cd_quilomb")) or texto(p.get("objectid")), "tipo": "quilombola",
+            "nome": texto(p.get("nm_comunid")), "municipio": texto(p.get("nm_municip")), "uf": texto(p.get("cd_uf")),
+            "fase": texto(p.get("fase")), "familias": inteiro(p.get("nr_familia"))}
+
+
+def m_assentamento(p: dict) -> dict:
+    return {"id_origem": texto(p.get("cd_sipra")) or texto(p.get("objectid")), "tipo": "assentamento",
+            "nome": texto(p.get("nome_proje")), "municipio": texto(p.get("municipio")), "uf": texto(p.get("uf")),
+            "fase": texto(p.get("descricao_")) or texto(p.get("fase")), "familias": inteiro(p.get("num_famili"))}
+
+
 # Municípios da região padrão (fonte: servicodados.ibge.gov.br/api/v1/localidades). Fora da lista: "IBGE <código>".
 MUNICIPIOS_IBGE = {
     "2919553": "Luís Eduardo Magalhães", "2903201": "Barreiras", "2928901": "São Desidério",
@@ -167,8 +196,8 @@ def _wfs(tipo, ordenar):
     return lambda bbox: clientes.wfs(TERRABRASILIS, tipo, bbox, ordenar)
 
 
-def _arcgis(caminho, campos):
-    return lambda bbox: clientes.arcgis(f"{IBAMA}/{caminho}", bbox, campos)
+def _arcgis(caminho, campos, raiz=IBAMA):
+    return lambda bbox: clientes.arcgis(f"{raiz}/{caminho}", bbox, campos)
 
 
 FONTES: dict[str, Fonte] = {f.id: f for f in [
@@ -198,6 +227,16 @@ FONTES: dict[str, Fonte] = {f.id: f for f in [
           f"{IBAMA}/lim_terra_indigena_a/FeatureServer/12",
           _arcgis("lim_terra_indigena_a/FeatureServer/12", ["objectid", "terrai_cod", "terrai_nom", "etnia_nome", "fase_ti"]),
           m_ti),
+    Fonte("quilombolas_incra", "Territórios quilombolas (INCRA)", "geo.territorios",
+          f"{IBAMA_SINC}/lim_quilombos_incra_a/FeatureServer/0",
+          _arcgis("lim_quilombos_incra_a/FeatureServer/0",
+                  ["objectid", "cd_quilomb", "nm_comunid", "nm_municip", "cd_uf", "fase", "nr_familia"], IBAMA_SINC),
+          m_quilombo),
+    Fonte("assentamentos_incra", "Assentamentos da reforma agrária (INCRA)", "geo.territorios",
+          f"{IBAMA}/assentamentos_incra/FeatureServer/1",
+          _arcgis("assentamentos_incra/FeatureServer/1",
+                  ["objectid", "cd_sipra", "nome_proje", "municipio", "uf", "fase", "descricao_", "num_famili"]),
+          m_assentamento),
     Fonte("sigef_privado", "Imóveis certificados SIGEF privados (INCRA)", "geo.imoveis",
           f"{IBAMA}/lim_imovel_sigef_privado_a/FeatureServer/9",
           _arcgis("lim_imovel_sigef_privado_a/FeatureServer/9",

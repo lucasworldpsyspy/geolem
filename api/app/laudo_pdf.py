@@ -16,7 +16,8 @@ from reportlab.lib.enums import TA_RIGHT
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import mm
-from reportlab.platypus import KeepTogether, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from reportlab.lib.utils import ImageReader
+from reportlab.platypus import Flowable, KeepTogether, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 from . import regras
 
@@ -175,6 +176,83 @@ def _legenda() -> Table:
     return t
 
 
+class _ImagemSatelite(Flowable):
+    """Recorte Sentinel-2 com o contorno da área analisada e das sobreposições desenhados por cima."""
+
+    def __init__(self, png: bytes, meta: dict, resultado: dict, largura: float, altura_max: float):
+        super().__init__()
+        self.png, self.meta, self.resultado = png, meta, resultado
+        proporcao = meta["altura_px"] / meta["largura_px"]
+        self.width = min(largura, altura_max / proporcao)
+        self.height = self.width * proporcao
+
+    def draw(self):
+        c = self.canv
+        w, h = self.width, self.height
+        x0, y0, x1, y1 = self.meta["bbox"]
+
+        def xy(p):
+            return (p[0] - x0) / (x1 - x0) * w, (p[1] - y0) / (y1 - y0) * h
+
+        def contorno(geom, cor, espessura, tracejado=None):
+            c.setStrokeColor(cor)
+            c.setLineWidth(espessura)
+            c.setDash(*(tracejado or ([], 0)))
+            for pol in _aneis(geom):
+                for anel in pol:
+                    if len(anel) < 3:
+                        continue
+                    caminho = c.beginPath()
+                    caminho.moveTo(*xy(anel[0]))
+                    for p in anel[1:]:
+                        caminho.lineTo(*xy(p))
+                    caminho.close()
+                    c.drawPath(caminho, stroke=1, fill=0)
+
+        c.saveState()
+        c.drawImage(ImageReader(BytesIO(self.png)), 0, 0, w, h)
+        caminho = c.beginPath()
+        caminho.rect(0, 0, w, h)
+        c.clipPath(caminho, stroke=0, fill=0)
+        for f in self.resultado.get("conflitos", {}).get("features", []):
+            if f["properties"].get("status") in ("bad", "warn"):
+                contorno(f["geometry"], COR_CONFLITO[f["properties"]["status"]], 0.9, ([2, 1.5], 0))
+        contorno(self.resultado["area"]["geometria"], colors.HexColor("#ffe14d"), 1.5)
+        c.restoreState()
+        c.setStrokeColor(BORDA)
+        c.setLineWidth(0.6)
+        c.rect(0, 0, w, h, stroke=1, fill=0)
+
+
+def _secao_imagens(resultado: dict, imagens: dict[str, bytes], largura_util: float) -> list:
+    metas = resultado.get("imagens") or []
+    if not metas:
+        return []
+    coluna = (largura_util - 6 * mm) / 2
+    anos = sorted({m["data"][:4] for m in metas if m.get("data")}) or [str(datetime.now().year)]
+    celulas = []
+    for meta in metas:
+        png = imagens.get(meta["tipo"])
+        # O PNG só entra no laudo se for exatamente o que foi registrado na análise
+        if png and meta.get("sha256") == hashlib.sha256(png).hexdigest():
+            data = datetime.fromisoformat(meta["data"]).strftime("%d/%m/%Y")
+            legenda = (f"<b>{_esc(meta['titulo'])}</b><br/>Imagem de {data} · {_esc(meta.get('satelite') or 'Sentinel-2')}"
+                       f" · nuvens na cena: {_num(meta.get('nuvens_pct'), 1)}%")
+            celulas.append([_ImagemSatelite(png, meta, resultado, coluna, 95 * mm), Spacer(1, 2),
+                            Paragraph(legenda, E_PEQ)])
+        else:
+            celulas.append([Paragraph(f"<b>{_esc(meta['titulo'])}</b><br/>"
+                                      f"{_esc(meta.get('indisponivel') or 'Imagem indisponível.')}", E_PEQ)])
+    t = Table([celulas], colWidths=[coluna + 3 * mm] * len(celulas), hAlign="LEFT")
+    t.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP"), ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                           ("RIGHTPADDING", (0, 0), (-1, -1), 3 * mm)]))
+    nota = Paragraph(
+        "Cor natural, resolução de 10 m. Contorno amarelo: área analisada; tracejado vermelho ou laranja: sobreposições "
+        "com ocorrência. Compare as duas imagens para ver mudanças de uso do solo desde 2020. "
+        f"{_esc(metas[0].get('atribuicao') or '')} ({', '.join(anos)}).", E_AVISO)
+    return [Paragraph("Imagens de satélite: antes e depois", E_H2), KeepTogether([t, Spacer(1, 3), nota])]
+
+
 def _qr(url: str, lado: float) -> Drawing:
     w = QrCodeWidget(url, barLevel="M")
     x1, y1, x2, y2 = w.getBounds()
@@ -184,7 +262,7 @@ def _qr(url: str, lado: float) -> Drawing:
 
 
 # ---------- documento ----------
-def gerar_pdf(resultado: dict, url_verificacao: str) -> bytes:
+def gerar_pdf(resultado: dict, url_verificacao: str, imagens: dict[str, bytes] | None = None) -> bytes:
     protocolo = resultado["protocolo"]
     integridade = resultado.get("integridade") or codigo_integridade(resultado)
     area = resultado["area"]
@@ -255,6 +333,7 @@ def gerar_pdf(resultado: dict, url_verificacao: str) -> bytes:
     bloco.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP"), ("LEFTPADDING", (0, 0), (-1, -1), 0),
                                ("RIGHTPADDING", (0, 0), (0, 0), 8), ("RIGHTPADDING", (1, 0), (1, 0), 0)]))
     h += [Paragraph("Área analisada", E_H2), bloco]
+    h += _secao_imagens(resultado, imagens or {}, largura_util)
 
     # Verificações
     linhas = [[Paragraph(t, E_CEL_B) for t in ("Verificação", "Resultado", "Área (ha)", "Detalhes")]]
@@ -293,8 +372,9 @@ def gerar_pdf(resultado: dict, url_verificacao: str) -> bytes:
         "Desmatamento posterior a 31/12/2020 (data de corte do Regulamento UE 2023/1115, EUDR) é classificado como "
         "<b>Não conforme</b>; entre 22/07/2008 e 31/12/2020 (marco do Código Florestal, Lei 12.651/2012), como "
         "<b>Atenção</b>. A classificação usa a data da imagem de satélite do PRODES quando disponível, pois o ano PRODES vai "
-        "de agosto a julho. Embargos do IBAMA, UCs de Proteção Integral e Terras Indígenas resultam em <b>Não conforme</b>; "
-        "UCs de Uso Sustentável, em <b>Atenção</b>. A Reserva Legal mínima considerada é de 20% (Cerrado fora da Amazônia "
+        "de agosto a julho. Embargos do IBAMA, UCs de Proteção Integral, Terras Indígenas e territórios quilombolas "
+        "reconhecidos (portaria, decreto ou título) resultam em <b>Não conforme</b>; UCs de Uso Sustentável, territórios "
+        "quilombolas em estudo e assentamentos da reforma agrária, em <b>Atenção</b>. A Reserva Legal mínima considerada é de 20% (Cerrado fora da Amazônia "
         f"Legal). Sobreposições menores que {area_min} ha são desconsideradas por serem, em geral, ruído de borda entre "
         "bases. Áreas calculadas sobre o elipsoide (geodésicas).", E_PEQ),
         Spacer(1, 4),

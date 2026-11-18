@@ -31,6 +31,7 @@ services:
       AREA_MINIMA_HA: ${AREA_MINIMA_HA:-0.1}
       WEB_DIR: /app/web
       URL_PUBLICA: ${URL_PUBLICA:-http://localhost:8000}
+      IMAGENS_SATELITE: ${IMAGENS_SATELITE:-1}
     ports:
       - "127.0.0.1:${API_PORTA:-8000}:8000"  # em produção, o acesso externo passa pelo Caddy (HTTPS)
     volumes:
