@@ -126,7 +126,7 @@ def enfileirar_monitoramento(conn) -> int:
 
 def _resumo_alerta(resultado: dict) -> str:
     problemas = [f"{c['titulo']} ({regras.fmt_ha(c['ha'])})" if c.get("ha") else c["titulo"]
-                 for c in resultado["checks"] if c["status"] in ("bad", "warn")]
+                 for c in resultado["checks"] if c["status"] in ("bad", "warn") and regras.entra_no_resultado(c)]
     return "; ".join(problemas)[:500] or resultado["resumo"]
 
 

@@ -90,7 +90,7 @@
         `<div class="geral s-${r.geral}"><b>${esc(r.rotulo_geral)}</b>${esc(r.resumo)}</div>` +
         `<div class="cartao"><h2>Verificações</h2><ul>${r.checks.map((c) =>
           `<li><span>${esc(c.titulo)}${c.ha && c.status !== 'ok' ? ` · ${fmtHa(c.ha)}` : ''}</span>` +
-          `<span class="selo s-${c.status}">${ROTULO[c.status] || esc(c.status)}</span></li>`).join('')}</ul></div>` +
+          `<span class="selo s-${c.status}">${esc(c.rotulo || ROTULO[c.status] || c.status)}</span></li>`).join('')}</ul></div>` +
         imagens(r) +
         `<div class="cartao"><h2>Código de integridade (SHA-256)</h2><div class="hash">${esc(r.integridade)}</div></div>` +
         `<a class="botao" href="/api/analises/${encodeURIComponent(r.protocolo)}/laudo.pdf">Abrir o laudo em PDF</a>`;

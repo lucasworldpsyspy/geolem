@@ -6,6 +6,9 @@ from datetime import date
 
 MARCO_CODIGO_FLORESTAL = date(2008, 7, 22)  # Lei 12.651/2012, art. 3º, IV
 CORTE_EUDR = date(2020, 12, 31)             # Regulamento (UE) 2023/1115, art. 2º, 13
+# RenovaBio: biomassa elegível só de área sem supressão de vegetação nativa desde a vigência da Resolução ANP
+# 758/2018 (critério mantido pela Resolução ANP 984/2025) e com CAR ativo ou pendente.
+CORTE_RENOVABIO = date(2018, 11, 27)
 RESERVA_LEGAL_MINIMA = 0.20                 # Cerrado fora da Amazônia Legal, art. 12, II
 
 ORDEM = {"ok": 0, "info": 1, "warn": 2, "bad": 3}
@@ -52,6 +55,33 @@ def alerta_pos_corte(data_deteccao: date | None) -> bool:
     return data_deteccao is None or data_deteccao > CORTE_EUDR
 
 
+def supressao_pos_renovabio(ano: int | None, data: date | None) -> bool:
+    """Supressão posterior ao corte do RenovaBio. Sem data, usa o ano PRODES (agosto a julho): o PRODES 2019
+    (ago/2018 a jul/2019) já inclui meses depois do corte, então conta (caso conservador)."""
+    if data is not None:
+        return data > CORTE_RENOVABIO
+    return ano is None or ano >= 2019
+
+
+SITUACOES_CAR_ELEGIVEIS = ("ATIVO", "PENDENTE")
+
+
+def avaliar_renovabio(ha_supressao: float, situacao_car: str | None, tipo_imovel: str | None,
+                      area_minima_ha: float) -> tuple[str, str, str]:
+    """(status, rótulo, texto). Fora do resultado geral: é um critério do programa, não de conformidade."""
+    if ha_supressao >= area_minima_ha:
+        return ("bad", "Inelegível",
+                f"Supressão de vegetação nativa após {CORTE_RENOVABIO:%d/%m/%Y}: {fmt_ha(ha_supressao)}. "
+                "A biomassa desta área não pode gerar CBIOs, salvo supressão legalmente autorizada antes do corte.")
+    if tipo_imovel == "CAR" and situacao_car:
+        if any(s in situacao_car.upper() for s in SITUACOES_CAR_ELEGIVEIS):
+            return "ok", "Elegível", f"Sem supressão após o corte e CAR {situacao_car.lower()}."
+        return "bad", "Inelegível", f"CAR com situação '{situacao_car}': o programa exige CAR ativo ou pendente."
+    return ("ok", "Elegível (uso do solo)",
+            f"Sem supressão de vegetação nativa após {CORTE_RENOVABIO:%d/%m/%Y}. "
+            "Confirme no SICAR se o CAR do imóvel está ativo ou pendente.")
+
+
 # Fases em que o território quilombola já foi reconhecido formalmente (portaria, decreto ou título)
 FASES_QUILOMBO_RECONHECIDO = ("TITUL", "DECRETO", "PORTARIA")
 
@@ -73,6 +103,11 @@ def avaliar_reserva_legal(reserva_ha: float | None, area_ha: float) -> tuple[str
         return "ok", texto
     deficit = area_ha * RESERVA_LEGAL_MINIMA - reserva_ha
     return "warn", f"{texto}. Déficit: {fmt_ha(deficit)}"
+
+
+def entra_no_resultado(check: dict) -> bool:
+    """Imóveis sobrepostos e elegibilidade RenovaBio aparecem no laudo, mas não mudam o resultado geral."""
+    return check["id"] not in ("imoveis", "renovabio")
 
 
 def status_geral(status: list[str]) -> str:

@@ -103,13 +103,15 @@ def consulta_gratis(p: PedidoConsulta, request: Request):
         limite_consulta_ip.falhou(ip)
         limite_consulta_email.falhou(email)
         ocorrencias = [{"titulo": c["titulo"], "status": c["status"], "rotulo": regras.ROTULOS[c["status"]]}
-                       for c in r["checks"] if c["status"] in ("bad", "warn")]
+                       for c in r["checks"] if c["status"] in ("bad", "warn") and regras.entra_no_resultado(c)]
         _gravar_lead(conn, p, email, "consulta", {"codigo": p.codigo, "imovel": im["nome"], "resultado": r["geral"]},
                      ip, municipio=im["municipio"])
     return {"imovel": {"nome": im["nome"], "municipio": im["municipio"], "uf": im["uf"],
                        "area_ha": round(im["area_ha"] or 0, 1)},
             "geral": r["geral"], "rotulo": r["rotulo_geral"], "resumo": r["resumo"],
-            "verificacoes": len([c for c in r["checks"] if c["id"] != "imoveis"]), "ocorrencias": ocorrencias}
+            "verificacoes": len([c for c in r["checks"] if regras.entra_no_resultado(c)]), "ocorrencias": ocorrencias,
+            "renovabio": next(({"rotulo": c["rotulo"], "status": c["status"]} for c in r["checks"]
+                               if c["id"] == "renovabio"), None)}
 
 
 class PedidoRelatorio(Contato):

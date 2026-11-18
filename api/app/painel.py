@@ -34,7 +34,7 @@ def painel(conn, empresa_id: int) -> dict:
            FROM app.areas a JOIN geo.analises an ON an.protocolo = a.ultimo_protocolo
            CROSS JOIN LATERAL jsonb_array_elements(an.detalhes->'checks') c
            WHERE a.empresa_id = %(empresa_id)s AND a.ativa AND c->>'status' IN ('bad', 'warn')
-             AND c->>'id' <> 'imoveis'
+             AND c->>'id' NOT IN ('imoveis', 'renovabio')
            GROUP BY 1, 2 ORDER BY (c->>'status' = 'bad') DESC, count(*) DESC""", p).fetchall()
 
     municipios = conn.execute(

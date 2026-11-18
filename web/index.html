@@ -478,7 +478,7 @@
     const itemTexto = (i) => esc(i.descricao) + (i.ha != null ? `: ${fmtHa(i.ha)}` : '');
 
     function renderResultado(r) {
-      const com = r.checks.filter((c) => c.status === 'warn' || c.status === 'bad').length;
+      const com = r.checks.filter((c) => (c.status === 'warn' || c.status === 'bad') && c.id !== 'imoveis' && c.id !== 'renovabio').length;
       $('#resultado').innerHTML =
         `<div class="geral ${r.geral}"><span class="selo ${r.geral}">${ROTULO[r.geral]}</span><div>${esc(r.resumo)}` +
         `<small>${com} verificação(ões) com ocorrência · área de ${fmtHa(r.area.area_ha)}</small></div></div>` +
@@ -486,7 +486,7 @@
         htmlImagens(r) +
         r.checks.map((c) =>
           `<div class="check ${c.status}"><div class="check-topo"><span class="check-titulo">${esc(c.titulo)}</span>` +
-          `<span class="selo ${c.status}">${ROTULO[c.status]}</span></div><div class="check-base">${esc(c.base)}</div>` +
+          `<span class="selo ${c.status}">${esc(c.rotulo || ROTULO[c.status])}</span></div><div class="check-base">${esc(c.base)}</div>` +
           `<ul>${c.itens.map((i) => `<li>${itemTexto(i)}</li>`).join('')}</ul></div>`).join('');
       $('#resultado').hidden = false;
       $('#btn-laudo').hidden = false;

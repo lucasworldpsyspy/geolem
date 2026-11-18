@@ -232,6 +232,7 @@
           <p style="margin:8px 0 0;font-size:18px;font-weight:700;color:${cor}">${esc(d.rotulo)}</p>
           <p class="aviso">${d.ocorrencias.length} de ${d.verificacoes} verificações com ocorrência:</p>
           ${d.ocorrencias.length ? `<ul>${d.ocorrencias.map((o) => `<li>${esc(o.titulo)}: <b>${esc(o.rotulo)}</b></li>`).join('')}</ul>` : ''}
+          ${d.renovabio ? `<p style="margin:8px 0 0">RenovaBio: <b>${esc(d.renovabio.rotulo)}</b></p>` : ''}
           <p class="aviso" style="margin-top:10px">O laudo completo traz hectares, datas, mapa, imagens de satélite de antes e depois e QR code de autenticidade.
           Recebemos seu contato e vamos falar com você.</p>`;
       }

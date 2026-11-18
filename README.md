@@ -96,9 +96,17 @@ Algumas camadas do INCRA chegam com letras acentuadas corrompidas na origem; a c
 | Território quilombola em estudo (RTID) | **Atenção** |
 | Assentamento da reforma agrária | **Atenção** |
 | Reserva Legal abaixo de 20% | **Atenção**, com o déficit em ha |
+| Elegibilidade RenovaBio | **Inelegível** se houver supressão de vegetação nativa após 27/11/2018 (fora do resultado geral) |
 | Base não carregada | **Atenção**: o sistema nunca diz "Conforme" sem ter consultado a base |
 
 O ano PRODES vai de agosto a julho, então o sistema usa a **data da imagem** quando ela existe.
+
+**RenovaBio:** a Resolução ANP 984/2025 (que substituiu a 758/2018) só aceita como elegível a biomassa de área sem
+supressão de vegetação nativa desde a vigência da 758/2018 (27/11/2018) e com CAR ativo ou pendente. O laudo mostra
+essa elegibilidade à parte, sem mudar o resultado geral: uma área desmatada em 2019 pode passar no EUDR (corte em
+2020) e ainda assim não servir para gerar CBIOs. Uniões das sobreposições de PRODES, DETER e MapBiomas posteriores ao
+corte são calculadas no PostGIS para não contar a mesma área duas vezes. Interessa a usinas de etanol de milho e de
+cana e a produtores de biodiesel que compram grão da região.
 O PRODES é anual e sai com atraso; o **DETER** cobre os meses que o PRODES ainda não publicou (um desmatamento de
 março aparece no laudo na mesma semana em que o INPE publica o alerta).
 

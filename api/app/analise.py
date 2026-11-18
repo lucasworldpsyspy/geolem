@@ -114,7 +114,8 @@ def analisar(conn, geometria: dict, nome: str | None = None, imovel: dict | None
 
         # 1-3. Desmatamento (PRODES), agrupado por ano
         grupos: dict[str, dict[int | None, dict]] = {"pos_2020": {}, "pos_2008": {}, "consolidado": {}}
-        for r in _sobreposicoes(cur, "geo.desmatamento", "t.ano, t.data_imagem, t.fonte", g):
+        prodes = _sobreposicoes(cur, "geo.desmatamento", "t.ano, t.data_imagem, t.fonte", g)
+        for r in prodes:
             classe = regras.classificar_desmatamento(r["ano"], r["data_imagem"])
             gr = grupos[classe].setdefault(r["ano"], {"n": 0, "ha": 0.0, "geoms": [], "datas": []})
             gr["n"] += 1
@@ -143,8 +144,8 @@ def analisar(conn, geometria: dict, nome: str | None = None, imovel: dict | None
                   itens_desm("consolidado"), "info")
 
         # Alertas recentes de desmatamento (MapBiomas Alerta e DETER), posteriores ao corte do EUDR
-        alertas = [r for r in _sobreposicoes(cur, "geo.alertas_desmatamento", "t.fonte, t.data_deteccao, t.id_origem", g)
-                   if regras.alerta_pos_corte(r["data_deteccao"])]
+        alertas_todos = _sobreposicoes(cur, "geo.alertas_desmatamento", "t.fonte, t.data_deteccao, t.id_origem", g)
+        alertas = [r for r in alertas_todos if regras.alerta_pos_corte(r["data_deteccao"])]
         fontes_carregadas = {b["fonte"] for lst in bases.values() for b in lst}
 
         def itens_alerta(fonte, nome):
@@ -239,6 +240,26 @@ def analisar(conn, geometria: dict, nome: str | None = None, imovel: dict | None
                        "base": "Art. 12, II, da Lei 12.651/2012 (Cerrado fora da Amazônia Legal)",
                        "status": st_rl, "ha": rl or 0, "itens": [{"descricao": texto_rl, "ha": None}]})
 
+        # Elegibilidade RenovaBio (fora do resultado geral). Supressão = PRODES ou alerta posterior ao corte;
+        # sobreposições entre bases são unidas no PostGIS para não contar a mesma área duas vezes.
+        if "geo.desmatamento" in bases:
+            geoms = ([r["geom_json"] for r in prodes if regras.supressao_pos_renovabio(r["ano"], r["data_imagem"])]
+                     + [r["geom_json"] for r in alertas_todos
+                        if r["fonte"] in fontes_carregadas and r["data_deteccao"]
+                        and r["data_deteccao"] > regras.CORTE_RENOVABIO])
+            ha_rb = 0.0
+            if geoms:
+                cur.execute("""SELECT ST_Area(ST_Union(ST_MakeValid(ST_GeomFromGeoJSON(x)))::geography) / 10000.0 AS ha
+                               FROM unnest(%s::text[]) AS x""", (geoms,))
+                ha_rb = cur.fetchone()["ha"] or 0.0
+            st_rb, rot_rb, txt_rb = regras.avaliar_renovabio(
+                ha_rb, (imovel or {}).get("situacao"), (imovel or {}).get("tipo"), AREA_MINIMA_HA)
+            checks.append({"id": "renovabio", "titulo": "Elegibilidade RenovaBio (biomassa)",
+                           "base": f"Resolução ANP 984/2025: sem supressão de vegetação nativa desde "
+                                   f"{regras.CORTE_RENOVABIO:%d/%m/%Y} e CAR ativo ou pendente. Não altera o resultado geral",
+                           "status": st_rb, "rotulo": rot_rb, "ha": round(ha_rb, 2),
+                           "itens": [{"descricao": txt_rb, "ha": None}]})
+
         # 11. Imóveis sobrepostos (identificação, não pesa no resultado)
         imv = _sobreposicoes(cur, "geo.imoveis", "t.id, t.tipo, t.codigo, t.nome", g)
         if "geo.imoveis" in bases:
@@ -250,7 +271,7 @@ def analisar(conn, geometria: dict, nome: str | None = None, imovel: dict | None
                          or [{"descricao": "Nenhum imóvel cadastrado sobreposto.", "ha": None}],
             })
 
-        geral = regras.status_geral([c["status"] for c in checks if c["id"] != "imoveis"])
+        geral = regras.status_geral([c["status"] for c in checks if regras.entra_no_resultado(c)])
         agora = datetime.now(timezone.utc)
         protocolo = f"GL-{agora:%Y%m%d}-{secrets.token_hex(4).upper()}"  # 8 hex: inviável adivinhar
         resultado = {

@@ -82,9 +82,9 @@ def _esc(t) -> str:
     return (str(t) if t is not None else "-").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
-def _selo(status: str) -> Paragraph:
+def _selo(status: str, rotulo: str | None = None) -> Paragraph:
     cor = CORES.get(status, CORES["info"])[0].hexval()[2:]
-    return Paragraph(f'<font color="#{cor}"><b>{regras.ROTULOS.get(status, status)}</b></font>', E_CEL)
+    return Paragraph(f'<font color="#{cor}"><b>{_esc(rotulo or regras.ROTULOS.get(status, status))}</b></font>', E_CEL)
 
 
 # ---------- mapa vetorial ----------
@@ -308,7 +308,7 @@ def gerar_pdf(resultado: dict, url_verificacao: str, imagens: dict[str, bytes] |
 
     # Resultado geral
     cor_txt, cor_fundo = CORES[geral]
-    ocorrencias = sum(1 for c in resultado["checks"] if c["status"] in ("warn", "bad"))
+    ocorrencias = sum(1 for c in resultado["checks"] if c["status"] in ("warn", "bad") and regras.entra_no_resultado(c))
     faixa = Table([[Paragraph(
         f'<font color="#{cor_txt.hexval()[2:]}" size="13"><b>{_esc(resultado["rotulo_geral"])}</b></font><br/>'
         f'{_esc(resultado["resumo"])} {ocorrencias} verificação(ões) com ocorrência.', _estilo("faixa", leading=15))]],
@@ -351,7 +351,7 @@ def gerar_pdf(resultado: dict, url_verificacao: str, imagens: dict[str, bytes] |
             _esc(it["descricao"]) + (f": {_num(it['ha'])} ha" if it.get("ha") is not None else "") for it in c["itens"])
         linhas.append([
             Paragraph(f"<b>{_esc(c['titulo'])}</b><br/><font color='#5b6660' size='7'>{_esc(c['base'])}</font>", E_CEL),
-            _selo(c["status"]),
+            _selo(c["status"], c.get("rotulo")),
             Paragraph(_num(c["ha"]) if c["ha"] else "-", _estilo("num", fontSize=8, leading=10, alignment=TA_RIGHT)),
             Paragraph(detalhes, E_CEL),
         ])
@@ -385,7 +385,9 @@ def gerar_pdf(resultado: dict, url_verificacao: str, imagens: dict[str, bytes] |
         "<b>Atenção</b>; UCs de Uso Sustentável, territórios "
         "quilombolas em estudo e assentamentos da reforma agrária, em <b>Atenção</b>. A Reserva Legal mínima considerada é de 20% (Cerrado fora da Amazônia "
         f"Legal). Sobreposições menores que {area_min} ha são desconsideradas por serem, em geral, ruído de borda entre "
-        "bases. Áreas calculadas sobre o elipsoide (geodésicas).", E_PEQ),
+        "bases. Áreas calculadas sobre o elipsoide (geodésicas). A elegibilidade RenovaBio (Resolução ANP 984/2025) "
+        "considera inelegível a área com supressão de vegetação nativa após 27/11/2018 (PRODES, DETER ou MapBiomas "
+        "Alerta) e não altera o resultado geral; o CAR ativo ou pendente deve ser confirmado no SICAR.", E_PEQ),
         Spacer(1, 4),
         Paragraph("Este laudo é um resultado automatizado, válido para as bases e datas indicadas. Não substitui vistoria "
                   "de campo nem parecer de profissional habilitado, e não atesta a regularidade dominial do imóvel.",
