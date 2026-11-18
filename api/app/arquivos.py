@@ -34,7 +34,7 @@ def _ler(caminho: str, ext: str) -> gpd.GeoDataFrame:
     return gpd.read_file(caminho)
 
 
-def ler_geometria(nome_arquivo: str, conteudo: bytes) -> dict:
+def _poligonos(nome_arquivo: str, conteudo: bytes) -> gpd.GeoDataFrame:
     ext = os.path.splitext(nome_arquivo.lower())[1]
     if ext not in EXTENSOES:
         raise ErroArquivo("Formato não suportado. Envie KML, KMZ, Shapefile (.zip), GeoJSON ou GPKG.")
@@ -57,7 +57,24 @@ def ler_geometria(nome_arquivo: str, conteudo: bytes) -> dict:
     poligonos = gdf[gdf.geometry.notna() & gdf.geom_type.isin(["Polygon", "MultiPolygon"])]
     if poligonos.empty:
         raise ErroArquivo("Nenhum polígono encontrado no arquivo (pontos e linhas não definem área).")
+    return poligonos
 
+
+def _texto(linha, *chaves) -> str | None:
+    for c in chaves:
+        for col in linha.index:
+            if str(col).strip().lower() == c.lower():
+                v = linha[col]
+                if isinstance(v, str) and v.strip():
+                    return v.strip()
+                if isinstance(v, (int, float)) and v == v:  # descarta NaN
+                    return str(int(v)) if float(v).is_integer() else str(v)
+    return None
+
+
+def ler_geometria(nome_arquivo: str, conteudo: bytes) -> dict:
+    """Todos os polígonos do arquivo unidos numa única área."""
+    poligonos = _poligonos(nome_arquivo, conteudo)
     geom = unary_union([g.buffer(0) if not g.is_valid else g for g in poligonos.geometry])
     props = {}
     primeira = poligonos.iloc[0]
@@ -69,3 +86,18 @@ def ler_geometria(nome_arquivo: str, conteudo: bytes) -> dict:
         "properties": {**props, "feicoes": int(len(poligonos)), "arquivo": nome_arquivo},
         "geometry": json.loads(json.dumps(mapping(geom))),
     }
+
+
+def ler_feicoes(nome_arquivo: str, conteudo: bytes) -> list[dict]:
+    """Cada polígono do arquivo como uma área separada (carteira em lote), com nome e fornecedor dos atributos."""
+    saida = []
+    for i, (_, linha) in enumerate(_poligonos(nome_arquivo, conteudo).iterrows(), start=1):
+        g = linha.geometry if linha.geometry.is_valid else linha.geometry.buffer(0)
+        saida.append({
+            "linha": i,
+            "nome": _texto(linha, "nome", "name", "fazenda", "imovel", "nom_imovel", "cod_imovel") or f"Área {i}",
+            "fornecedor": _texto(linha, "fornecedor", "produtor", "proprietario"),
+            "codigo_externo": _texto(linha, "codigo_externo", "codigo_erp", "cod_fornecedor", "codigo"),
+            "geometria": json.loads(json.dumps(mapping(g))),
+        })
+    return saida

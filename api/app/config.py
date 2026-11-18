@@ -17,6 +17,18 @@ URL_PUBLICA = os.getenv("URL_PUBLICA", "http://localhost:8000").rstrip("/")
 # Imagens de satélite de antes e depois no laudo (precisa de internet no servidor). 0 desliga.
 IMAGENS_SATELITE = os.getenv("IMAGENS_SATELITE", "1") == "1"
 
+# E-mail dos alertas da carteira (opcional). Sem SMTP_HOST, os alertas ficam só na tela.
+SMTP = {
+    "host": os.getenv("SMTP_HOST", ""),
+    "porta": int(os.getenv("SMTP_PORTA", "587")),
+    "usuario": os.getenv("SMTP_USUARIO", ""),
+    "senha": os.getenv("SMTP_SENHA", ""),
+    "remetente": os.getenv("SMTP_REMETENTE", "nao-responda@localhost"),
+}
+
+# Cookie de sessão só por HTTPS em produção
+COOKIE_SEGURO = URL_PUBLICA.startswith("https://")
+
 WEB_DIR = os.getenv("WEB_DIR", os.path.join(os.path.dirname(__file__), "..", "..", "web"))
 
 TAMANHO_MAX_ARQUIVO = 20 * 1024 * 1024  # 20 MB

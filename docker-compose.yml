@@ -38,5 +38,24 @@ services:
       - ./web:/app/web:ro
       - ./dados:/app/dados
 
+  # Processa a fila da carteira (análises em lote e monitoramento semanal) e envia os alertas por e-mail
+  worker:
+    build: ./api
+    restart: unless-stopped
+    command: ["python", "-m", "app.worker"]
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-geolem}:${POSTGRES_PASSWORD:-geolem}@db:5432/${POSTGRES_DB:-geolem}
+      AREA_MINIMA_HA: ${AREA_MINIMA_HA:-0.1}
+      URL_PUBLICA: ${URL_PUBLICA:-http://localhost:8000}
+      IMAGENS_SATELITE: ${IMAGENS_SATELITE:-1}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORTA: ${SMTP_PORTA:-587}
+      SMTP_USUARIO: ${SMTP_USUARIO:-}
+      SMTP_SENHA: ${SMTP_SENHA:-}
+      SMTP_REMETENTE: ${SMTP_REMETENTE:-}
+
 volumes:
   dados_db:

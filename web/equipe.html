@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Equipe · GeoLEM</title>
+  <link rel="icon" href="/marca.svg">
+  <link rel="stylesheet" href="/estilo.css">
+  <style>.inativo td { opacity: .55; } .grade { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }</style>
+</head>
+<body>
+  <header class="barra" data-pagina="equipe"></header>
+  <main class="pagina">
+    <div class="cabecalho">
+      <div>
+        <h1>Equipe</h1>
+        <p>Quem tem acesso ao GeoLEM na sua empresa. Administradores gerenciam usuários e veem o registro de atividades.</p>
+      </div>
+      <button id="btn-novo" class="btn btn-primario" type="button">+ Novo usuário</button>
+    </div>
+
+    <div class="tabela-wrap">
+      <table>
+        <thead><tr><th>Nome</th><th>E-mail</th><th>Papel</th><th>Último acesso</th><th>Situação</th><th></th></tr></thead>
+        <tbody id="usuarios"><tr><td colspan="6" class="vazio">Carregando…</td></tr></tbody>
+      </table>
+    </div>
+
+    <section>
+      <h2>Registro de atividades</h2>
+      <p class="aviso" style="margin-bottom:10px">Entradas no sistema, laudos emitidos, mudanças na carteira e nos acessos. Mostra os 200 registros mais recentes.</p>
+      <div class="tabela-wrap">
+        <table>
+          <thead><tr><th>Quando</th><th>Quem</th><th>O quê</th><th>Detalhe</th><th>IP</th></tr></thead>
+          <tbody id="auditoria"><tr><td colspan="5" class="vazio">Carregando…</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <dialog id="dlg-novo">
+    <form id="form-novo" novalidate>
+      <h3>Novo usuário</h3>
+      <div class="grade">
+        <label class="campo">Nome <input id="novo-nome" type="text" required maxlength="120"></label>
+        <label class="campo">E-mail <input id="novo-email" type="email" required maxlength="200"></label>
+      </div>
+      <label class="campo">Papel
+        <select id="novo-papel">
+          <option value="analista">Analista: analisa áreas e gerencia a carteira</option>
+          <option value="admin">Administrador: também gerencia usuários e vê o registro de atividades</option>
+        </select>
+      </label>
+      <p id="erro-novo" class="erro" role="alert" hidden></p>
+      <div class="botoes" style="justify-content:flex-end">
+        <button class="btn" type="button" data-fechar>Cancelar</button>
+        <button class="btn btn-primario" type="submit">Criar</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="dlg-senha">
+    <h3>Senha provisória</h3>
+    <p id="senha-para" class="aviso"></p>
+    <p class="segredo" id="senha-valor"></p>
+    <p class="aviso">Envie essa senha para a pessoa por um canal seguro. Ela será mostrada só agora, e a pessoa vai criar a própria senha no primeiro acesso.</p>
+    <div class="botoes" style="justify-content:flex-end;margin-top:12px">
+      <button class="btn" type="button" id="btn-copiar">Copiar</button>
+      <button class="btn btn-primario" type="button" data-fechar>Fechar</button>
+    </div>
+  </dialog>
+
+  <p class="rodape"><a href="/termos.html">Termos de uso</a> · <a href="/privacidade.html">Privacidade</a></p>
+<script src="/conta.js"></script>
+<script>
+  const $ = (s) => document.querySelector(s);
+  const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const data = (iso) => iso ? new Date(iso).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : 'nunca';
+  async function api(url, opcoes = {}) {
+    const r = await fetch(url, { ...opcoes, headers: { 'Content-Type': 'application/json', ...(opcoes.headers || {}) } });
+    const d = await r.json().catch(() => ({}));
+    if (r.status === 403 && !opcoes.method) { location.href = '/'; }
+    if (!r.ok) throw new Error(typeof d.detail === 'string' ? d.detail : `Erro ${r.status}`);
+    return d;
+  }
+  function mostrarSenha(email, senha) {
+    $('#senha-para').textContent = `Para ${email}:`;
+    $('#senha-valor').textContent = senha;
+    $('#dlg-senha').showModal();
+  }
+  document.querySelectorAll('[data-fechar]').forEach((b) => b.addEventListener('click', () => b.closest('dialog').close()));
+  $('#btn-copiar').addEventListener('click', () => navigator.clipboard.writeText($('#senha-valor').textContent));
+
+  async function carregar() {
+    const eu = window.GEOLEM_USUARIO || await api('/api/auth/eu');
+    const [usuarios, registros] = await Promise.all([api('/api/equipe'), api('/api/auditoria')]);
+    $('#usuarios').innerHTML = usuarios.map((u) => `<tr class="${u.ativo ? '' : 'inativo'}">
+      <td><b>${esc(u.nome)}</b>${u.id === eu.id ? ' <small style="display:inline">(você)</small>' : ''}</td>
+      <td>${esc(u.email)}</td>
+      <td>${u.papel === 'admin' ? 'Administrador' : 'Analista'}</td>
+      <td>${data(u.ultimo_acesso)}</td>
+      <td>${u.ativo ? (u.trocar_senha ? '<span class="selo fila">Aguardando 1º acesso</span>' : '<span class="selo ok">Ativo</span>') : '<span class="selo erro">Desativado</span>'}</td>
+      <td>${u.id === eu.id ? '' : `<div class="botoes" style="justify-content:flex-end">
+        <button class="btn btn-peq" data-senha="${u.id}" data-email="${esc(u.email)}" type="button">Redefinir senha</button>
+        <button class="btn btn-peq" data-papel="${u.id}" data-valor="${u.papel === 'admin' ? 'analista' : 'admin'}" type="button">Tornar ${u.papel === 'admin' ? 'analista' : 'administrador'}</button>
+        <button class="btn btn-peq ${u.ativo ? 'btn-perigo' : ''}" data-ativo="${u.id}" data-valor="${!u.ativo}" type="button">${u.ativo ? 'Desativar' : 'Reativar'}</button>
+      </div>`}</td></tr>`).join('');
+    $('#auditoria').innerHTML = registros.map((r) => `<tr>
+      <td>${data(r.em)}</td><td>${esc(r.usuario || '-')}</td><td>${esc(r.descricao)}</td>
+      <td>${esc(r.alvo || '')}${r.detalhes && r.detalhes.resultado ? ` · ${esc({ ok: 'Conforme', warn: 'Atenção', bad: 'Não conforme' }[r.detalhes.resultado] || '')}` : ''}${r.detalhes && r.detalhes.importadas != null ? ` · ${r.detalhes.importadas} importadas` : ''}</td>
+      <td><small style="color:inherit">${esc(r.ip || '')}</small></td></tr>`).join('') || '<tr><td colspan="5" class="vazio">Sem registros.</td></tr>';
+  }
+
+  $('#usuarios').addEventListener('click', async (e) => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    try {
+      if (b.dataset.senha && confirm(`Gerar uma senha provisória nova para ${b.dataset.email}? A senha atual deixa de valer.`)) {
+        const r = await api(`/api/equipe/${b.dataset.senha}/redefinir-senha`, { method: 'POST' });
+        mostrarSenha(b.dataset.email, r.senha_provisoria);
+      } else if (b.dataset.papel) {
+        await api(`/api/equipe/${b.dataset.papel}`, { method: 'PATCH', body: JSON.stringify({ papel: b.dataset.valor }) });
+      } else if (b.dataset.ativo) {
+        await api(`/api/equipe/${b.dataset.ativo}`, { method: 'PATCH', body: JSON.stringify({ ativo: b.dataset.valor === 'true' }) });
+      }
+      carregar();
+    } catch (err) { alert(err.message); }
+  });
+
+  $('#btn-novo').addEventListener('click', () => { $('#form-novo').reset(); $('#erro-novo').hidden = true; $('#dlg-novo').showModal(); });
+  $('#form-novo').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const email = $('#novo-email').value.trim();
+    try {
+      const r = await api('/api/equipe', { method: 'POST', body: JSON.stringify({ nome: $('#novo-nome').value, email, papel: $('#novo-papel').value }) });
+      $('#dlg-novo').close();
+      mostrarSenha(email, r.senha_provisoria);
+      carregar();
+    } catch (err) { $('#erro-novo').textContent = err.message; $('#erro-novo').hidden = false; }
+  });
+
+  carregar().catch((e) => { $('#usuarios').innerHTML = `<tr><td colspan="6" class="vazio">${esc(e.message)}</td></tr>`; });
+</script>
+</body>
+</html>

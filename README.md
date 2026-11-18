@@ -12,9 +12,9 @@ o crédito rural e o ESG. Hoje essa checagem é manual, lenta e cara.
 
 ```
 geolem/
-├── docker-compose.yml      PostGIS + API (a API também serve o frontend)
-├── docker-compose.prod.yml produção: Caddy com HTTPS automático e senha de acesso
-├── deploy/                 Caddyfile e scripts de instalação, envio, backup e troca de senha
+├── docker-compose.yml      PostGIS + API (que também serve o frontend) + worker da carteira
+├── docker-compose.prod.yml produção: Caddy com HTTPS automático
+├── deploy/                 Caddyfile e scripts de instalação, envio e backup
 ├── .env.example            configurações (copie para .env)
 ├── db/init/01_schema.sql   tabelas, índices espaciais e função de normalização
 ├── api/
@@ -26,6 +26,11 @@ geolem/
 │   │   ├── laudo_pdf.py    laudo em PDF com mapa, QR code e código de integridade
 │   │   ├── imagens.py      imagens Sentinel-2 de antes e depois da área
 │   │   ├── eudr.py         exportação GeoJSON para a declaração do EUDR
+│   │   ├── contas.py       empresas, usuários, senhas, sessões e auditoria (+ linha de comando)
+│   │   ├── carteira.py     carteira de fornecedores, importação em lote e alertas
+│   │   ├── worker.py       fila de análises e monitoramento semanal
+│   │   ├── avisos.py       resumo de alertas por e-mail
+│   │   ├── planilha.py     leitura da planilha da carteira (CSV/Excel)
 │   │   └── arquivos.py     leitura de KML, KMZ, SHP (zip), GeoJSON e GPKG
 │   ├── ingest/             carga das bases públicas
 │   │   ├── fontes.py       catálogo de fontes e mapeamento de campos
@@ -33,8 +38,8 @@ geolem/
 │   │   ├── carregar.py     carga transacional com registro em geo.cargas
 │   │   └── car.py          importador do shapefile do SICAR
 │   └── tests/              testes das regras
-├── web/index.html          frontend (MapLibre)
-├── web/verificar.html      página pública de verificação de laudo (destino do QR code)
+├── web/                    frontend: análise (MapLibre), carteira, laudos, equipe, login, termos e privacidade
+│   └── verificar.html      página pública de verificação de laudo (destino do QR code)
 ├── dados/                  arquivos baixados manualmente (CAR); fora do git
 ├── vendas/                 apresentação: laudo de exemplo e roteiro de reunião
 └── prototipo/              protótipo da fase 1 com dados fictícios
@@ -98,7 +103,33 @@ docker compose up -d --build    # sobe o PostGIS e a API
 docker compose exec api python -m ingest todas    # carrega as bases públicas (alguns minutos)
 ```
 
-Abra http://localhost:8000. A documentação da API fica em http://localhost:8000/docs.
+Crie a primeira empresa e o seu usuário (a senha provisória aparece uma vez; você cria a sua no primeiro acesso):
+
+```bash
+docker compose exec api python -m app.contas nova-empresa "Minha Empresa" --admin-nome "Seu Nome" --admin-email voce@exemplo.com.br
+```
+
+Abra http://localhost:8000. A documentação da API fica em http://localhost:8000/docs (com login).
+
+### Contas e acesso
+- Cada cliente é uma **empresa**, com usuários **administradores** (gerenciam a equipe e veem o registro de atividades)
+  e **analistas**. Cada empresa vê só a própria carteira e os próprios laudos.
+- Senhas com scrypt; senha provisória com troca obrigatória no primeiro acesso; sessão expira após 12 h sem uso
+  (e no máximo em 7 dias); limite de tentativas de login por IP e por e-mail; proteção contra CSRF.
+- **Registro de atividades** (`app.auditoria`): logins (inclusive os recusados), laudos, carteira e mudanças de acesso,
+  com data, usuário e IP. Aparece na página Equipe.
+- Públicos sem login: a tela de entrada, os termos, a privacidade e a verificação de laudos pelo QR code.
+- Linha de comando: `python -m app.contas nova-empresa | novo-usuario | redefinir-senha | listar`.
+
+### Carteira e monitoramento
+- **Importar em lote** pela página Carteira: planilha CSV/Excel com o código SIGEF ou CAR (colunas `codigo`, `nome`,
+  `fornecedor`, `codigo_erp`, `reserva_legal_ha`), ou arquivo geográfico em que cada polígono vira uma área. Linhas com
+  problema são listadas com o motivo, sem travar o resto.
+- As análises entram numa **fila** processada pelo serviço `worker` (cerca de 5 s por área, com as imagens de satélite).
+- **Monitoramento:** toda segunda, depois da carga das bases, `python -m app.worker monitorar` reanalisa todas as áreas.
+  Se a situação piorar (ex.: Conforme → Não conforme), nasce um **alerta** na carteira e, com `SMTP_*` configurado no
+  `.env`, os administradores recebem um resumo por e-mail quando a fila da empresa termina.
+- Exportações: planilha da carteira (abre no Excel) e um GeoJSON do EUDR com todas as áreas Conformes.
 
 ### CAR (manual)
 O SICAR não oferece serviço aberto para a Bahia. Baixe em https://consultapublica.car.gov.br/publico/estados/downloads
@@ -147,8 +178,8 @@ Em produção, isso vira uma tarefa agendada semanal.
 
 ## Colocar no ar (servidor)
 
-O sistema roda num servidor Linux com Docker. O Caddy emite o certificado HTTPS sozinho e pede usuário e senha
-para tudo, **menos a verificação de laudos** (`/verificar/...` e a leitura de um protocolo), que precisa ser pública
+O sistema roda num servidor Linux com Docker. O Caddy emite o certificado HTTPS sozinho. Todo o sistema
+pede login, **menos a verificação de laudos** (`/verificar/...` e a leitura de um protocolo), que precisa ser pública
 para o QR code funcionar no celular de quem recebe o laudo. O banco e a API não ficam expostos à internet.
 
 **O que contratar:**
@@ -159,18 +190,19 @@ para o QR code funcionar no celular de quem recebe o laudo. O banco e a API não
 **Primeira instalação** (no seu computador, no Git Bash, dentro da pasta `geolem`):
 ```bash
 bash deploy/enviar.sh root@IP_DO_SERVIDOR
-ssh root@IP_DO_SERVIDOR "bash /opt/geolem/deploy/instalar.sh laudos.seudominio.com.br"
+ssh root@IP_DO_SERVIDOR "bash /opt/geolem/deploy/instalar.sh laudos.seudominio.com.br voce@seuemail.com.br 'Seu Nome'"
 ```
-O `instalar.sh` instala o Docker, liga o firewall (só SSH, HTTP e HTTPS), gera senhas fortes no `.env`, sobe o sistema,
-carrega as bases e agenda as tarefas. **Ele mostra a senha de acesso uma única vez: anote.**
-O usuário é `geolem`; para trocar a senha, rode `bash /opt/geolem/deploy/trocar-senha.sh` no servidor.
+O `instalar.sh` instala o Docker, liga o firewall (só SSH, HTTP e HTTPS), gera a senha do banco no `.env`, sobe o
+sistema, carrega as bases, cria a sua conta de administrador e agenda as tarefas.
+**Ele mostra a sua senha provisória uma única vez: anote.** Para cada cliente, crie a empresa e o primeiro
+administrador com `python -m app.contas nova-empresa` (o comando completo aparece no fim da instalação).
 
 **Atualizar** depois de mudar o código: faça o commit e rode de novo `bash deploy/enviar.sh root@IP_DO_SERVIDOR`.
 Só vai o que está no git; o `.env`, o banco e os backups do servidor não são tocados. Tabelas novas do
 `db/init/01_schema.sql` são criadas automaticamente (o script só cria o que ainda não existe).
 
-**Tarefas agendadas** (`/etc/cron.d/geolem`): bases públicas atualizadas toda segunda às 3h
-(log em `/var/log/geolem-bases.log`) e backup do banco todo dia às 2h.
+**Tarefas agendadas** (`/etc/cron.d/geolem`): bases públicas atualizadas toda segunda às 3h, seguidas do
+monitoramento de todas as carteiras (log em `/var/log/geolem-bases.log`), e backup do banco todo dia às 2h.
 
 ### Backups
 Ficam em `/opt/geolem/backups`, com 14 dias guardados (cerca de 8 MB cada). Os laudos emitidos são o que não dá para
@@ -194,6 +226,16 @@ Para restaurar num banco vazio:
 | GET | `/api/analises/{protocolo}/laudo.pdf` | laudo em PDF (`?baixar=true` força o download) |
 | GET | `/api/analises/{protocolo}/imagens/{antes\|depois}.png` | imagens de satélite gravadas com a análise |
 | GET | `/api/analises/{protocolo}/eudr.geojson` | geolocalização no formato da declaração do EUDR |
+| GET | `/api/analises` | laudos emitidos pela empresa |
+| POST | `/api/auth/login` · `/api/auth/sair` · `/api/auth/senha` | entrar, sair e trocar a senha |
+| GET/POST/PATCH | `/api/equipe` | usuários da empresa (administradores) |
+| GET | `/api/auditoria` | registro de atividades (administradores) |
+| GET | `/api/carteira` | resumo e áreas da carteira |
+| POST | `/api/carteira/importar` | importação em lote (planilha ou arquivo geográfico) |
+| POST/DELETE | `/api/carteira/areas` | adicionar ou remover uma área |
+| POST | `/api/carteira/reanalisar` | pôr áreas na fila de novo |
+| GET | `/api/carteira/alertas` | alertas de mudança de situação |
+| GET | `/api/carteira/exportar.csv` · `/api/carteira/eudr.geojson` | exportações da carteira |
 | GET | `/verificar/{protocolo}` | página pública de verificação (destino do QR code) |
 | POST | `/api/arquivos/geometria` | converte KML/KMZ/SHP/GeoJSON/GPKG em GeoJSON |
 | GET | `/api/tiles/{camada}/{z}/{x}/{y}.pbf` | vector tiles para o mapa |
@@ -202,8 +244,9 @@ Para restaurar num banco vazio:
 - **Fase 2 (esta):** bases reais, PostGIS, API, importação de arquivos, laudo com protocolo
 - **Feito na fase 2:** laudo em PDF gerado no servidor, com QR code e código de integridade; imagens de satélite de
   antes e depois; territórios quilombolas e assentamentos; exportação GeoJSON para o EUDR
-- **Próximos passos:** análise em lote e monitoramento da carteira com alertas; MapBiomas Alerta, DETER Cerrado e APP
-  por hidrografia
+- **Feito:** contas por empresa com auditoria; carteira com importação em lote, monitoramento semanal e alertas
+- **Próximos passos:** MapBiomas Alerta, DETER Cerrado e APP por hidrografia; gráfico de NDVI no laudo;
+  integração com ERPs
 - **Fase 3 (produto):** login, empresas e carteiras de fornecedores, monitoramento contínuo com alertas, integração com ERPs do agro (Siagri, TOTVS, SAP), frontend em React
 
 ## Modelo de negócio (hipótese)

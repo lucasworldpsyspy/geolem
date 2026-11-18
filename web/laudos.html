@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Laudos · GeoLEM</title>
+  <link rel="icon" href="/marca.svg">
+  <link rel="stylesheet" href="/estilo.css">
+</head>
+<body>
+  <header class="barra" data-pagina="laudos"></header>
+  <main class="pagina">
+    <div class="cabecalho">
+      <div>
+        <h1>Laudos emitidos</h1>
+        <p>Todos os laudos da sua empresa, do mais recente para o mais antigo. Cada um pode ser conferido pelo QR code.</p>
+      </div>
+      <input id="filtro" type="search" placeholder="Buscar por área ou protocolo" aria-label="Buscar laudos" style="max-width:300px">
+    </div>
+    <div class="tabela-wrap">
+      <table>
+        <thead><tr><th>Emitido em</th><th>Área</th><th class="num">Área (ha)</th><th>Resultado</th><th>Emitido por</th><th>Protocolo</th><th></th></tr></thead>
+        <tbody id="linhas"><tr><td colspan="7" class="vazio">Carregando…</td></tr></tbody>
+      </table>
+    </div>
+  </main>
+  <p class="rodape"><a href="/termos.html">Termos de uso</a> · <a href="/privacidade.html">Privacidade</a></p>
+<script src="/conta.js"></script>
+<script>
+  const $ = (s) => document.querySelector(s);
+  const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const ROTULO = { ok: 'Conforme', warn: 'Atenção', bad: 'Não conforme' };
+  let laudos = [];
+  function desenhar() {
+    const t = $('#filtro').value.trim().toLowerCase();
+    const lista = laudos.filter((l) => !t || l.nome_area.toLowerCase().includes(t) || l.protocolo.toLowerCase().includes(t));
+    $('#linhas').innerHTML = lista.map((l) => `<tr>
+      <td>${new Date(l.criado_em).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}</td>
+      <td><b>${esc(l.nome_area)}</b>${l.area_id ? '<small>carteira</small>' : ''}</td>
+      <td class="num">${l.area_ha.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}</td>
+      <td><span class="selo ${l.resultado}">${ROTULO[l.resultado] || esc(l.resultado)}</span></td>
+      <td>${esc(l.usuario || (l.area_id ? 'Monitoramento automático' : '-'))}</td>
+      <td><small style="color:inherit">${esc(l.protocolo)}</small></td>
+      <td><div class="botoes" style="justify-content:flex-end">
+        <a class="btn btn-peq" href="/api/analises/${encodeURIComponent(l.protocolo)}/laudo.pdf" target="_blank" rel="noopener">PDF</a>
+        <a class="btn btn-peq" href="/verificar/${encodeURIComponent(l.protocolo)}" target="_blank" rel="noopener">Verificação</a>
+      </div></td></tr>`).join('') || '<tr><td colspan="7" class="vazio">Nenhum laudo emitido ainda.</td></tr>';
+  }
+  fetch('/api/analises?limite=500').then((r) => r.ok ? r.json() : Promise.reject(new Error(`Erro ${r.status}`)))
+    .then((d) => { laudos = d; desenhar(); })
+    .catch((e) => { $('#linhas').innerHTML = `<tr><td colspan="7" class="vazio">${esc(e.message)}</td></tr>`; });
+  $('#filtro').addEventListener('input', desenhar);
+</script>
+</body>
+</html>

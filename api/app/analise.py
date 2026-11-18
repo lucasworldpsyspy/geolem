@@ -64,7 +64,8 @@ def _data_br(d) -> str:
 
 
 def analisar(conn, geometria: dict, nome: str | None = None, imovel: dict | None = None,
-             reserva_legal_ha: float | None = None) -> dict:
+             reserva_legal_ha: float | None = None, empresa_id: int | None = None, usuario_id: int | None = None,
+             area_id: int | None = None) -> dict:
     g = json.dumps(geometria)
     with conn.cursor() as cur:
         try:
@@ -252,10 +253,11 @@ def analisar(conn, geometria: dict, nome: str | None = None, imovel: dict | None
         resultado["integridade"] = codigo_integridade(resultado)
 
         cur.execute(
-            """INSERT INTO geo.analises (protocolo, nome_area, imovel_id, area_ha, resultado, detalhes, geom)
-               VALUES (%s, %s, %s, %s, %s, %s, geo.normalizar(ST_GeomFromGeoJSON(%s)))""",
+            """INSERT INTO geo.analises (protocolo, nome_area, imovel_id, area_ha, resultado, detalhes, geom,
+                                         empresa_id, usuario_id, area_id)
+               VALUES (%s, %s, %s, %s, %s, %s, geo.normalizar(ST_GeomFromGeoJSON(%s)), %s, %s, %s)""",
             (protocolo, resultado["area"]["nome"], (imovel or {}).get("id"), area["ha"], geral,
-             Jsonb(resultado), area["geom_json"]),
+             Jsonb(resultado), area["geom_json"], empresa_id, usuario_id, area_id),
         )
         for tipo, png in pngs.items():
             cur.execute("INSERT INTO geo.analises_imagens (protocolo, tipo, png) VALUES (%s, %s, %s)",

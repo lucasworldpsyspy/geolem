@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Entrar · GeoLEM</title>
+  <link rel="icon" href="/marca.svg">
+  <link rel="stylesheet" href="/estilo.css">
+  <style>
+    body { min-height: 100vh; display: grid; grid-template-columns: 1.1fr 1fr; }
+    .lado { padding: 48px; display: flex; flex-direction: column; justify-content: space-between; gap: 32px;
+      background: linear-gradient(160deg, #12271e 0%, #0e1411 70%); border-right: 1px solid var(--borda); }
+    .lado .marca { display: flex; align-items: center; gap: 12px; font-size: 22px; font-weight: 700; }
+    .lado .marca img { width: 42px; height: 42px; }
+    .lado h1 { font-size: 34px; line-height: 1.15; max-width: 520px; }
+    .lado ul { list-style: none; padding: 0; margin: 20px 0 0; display: flex; flex-direction: column; gap: 10px; color: #cfdad3; }
+    .lado li::before { content: "✓"; color: var(--marca); font-weight: 700; margin-right: 10px; }
+    .lado .pe { color: var(--suave); font-size: 12.5px; }
+    .lado .pe a { color: var(--suave); }
+    main { display: grid; place-items: center; padding: 32px 20px; }
+    form { width: 100%; max-width: 360px; display: flex; flex-direction: column; gap: 14px; }
+    form h2 { font-size: 20px; color: var(--texto); text-transform: none; letter-spacing: 0; margin: 0; }
+    @media (max-width: 860px) { body { grid-template-columns: 1fr; } .lado { padding: 28px 20px; border-right: 0; } .lado ul { display: none; } }
+  </style>
+</head>
+<body>
+  <section class="lado">
+    <div class="marca"><img src="/marca.svg" alt="">GeoLEM</div>
+    <div>
+      <h1>Compliance socioambiental de áreas rurais, com bases oficiais e laudo verificável.</h1>
+      <ul>
+        <li>Desmatamento (PRODES), embargos, UCs, Terras Indígenas, quilombolas e assentamentos</li>
+        <li>Imagens de satélite de antes e depois de 2020 (corte do EUDR)</li>
+        <li>Carteira de fornecedores monitorada toda semana</li>
+        <li>Laudo em PDF com QR code e código de integridade</li>
+      </ul>
+    </div>
+    <p class="pe">Oeste da Bahia · <a href="/termos.html">Termos de uso</a> · <a href="/privacidade.html">Privacidade</a></p>
+  </section>
+
+  <main>
+    <form id="form-entrar" novalidate>
+      <h2>Entrar</h2>
+      <label class="campo">E-mail
+        <input id="email" type="email" autocomplete="username" required autofocus>
+      </label>
+      <label class="campo">Senha
+        <input id="senha" type="password" autocomplete="current-password" required>
+      </label>
+      <p id="erro" class="erro" role="alert" hidden></p>
+      <button class="btn btn-primario" type="submit">Entrar</button>
+      <p class="aviso">Esqueceu a senha? Peça ao administrador da sua empresa para redefinir.</p>
+    </form>
+
+    <form id="form-trocar" novalidate hidden>
+      <h2>Crie sua senha</h2>
+      <p class="aviso">Por segurança, troque a senha provisória antes de continuar. Use pelo menos 10 caracteres, com letras e números.</p>
+      <label class="campo">Senha provisória (ou atual)
+        <input id="atual" type="password" autocomplete="current-password" required>
+      </label>
+      <label class="campo">Nova senha
+        <input id="nova" type="password" autocomplete="new-password" minlength="10" required>
+      </label>
+      <label class="campo">Repita a nova senha
+        <input id="nova2" type="password" autocomplete="new-password" minlength="10" required>
+      </label>
+      <p id="erro2" class="erro" role="alert" hidden></p>
+      <button class="btn btn-primario" type="submit">Salvar e continuar</button>
+    </form>
+  </main>
+
+<script>
+  const $ = (s) => document.querySelector(s);
+  const params = new URLSearchParams(location.search);
+  // Só aceita voltar para uma página interna (evita redirecionamento para outro site)
+  const volta = /^\/[a-z0-9._/-]*$/i.test(params.get('volta') || '') ? params.get('volta') : '/';
+  let senhaDigitada = '';
+
+  function mostrar(el, msg) { el.textContent = msg; el.hidden = !msg; }
+  async function enviar(url, corpo) {
+    const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(corpo) });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(typeof d.detail === 'string' ? d.detail : 'Não foi possível concluir.');
+    return d;
+  }
+  function pedirTroca() { $('#form-entrar').hidden = true; $('#form-trocar').hidden = false; $('#atual').value = senhaDigitada; ($('#atual').value ? $('#nova') : $('#atual')).focus(); }
+
+  if (params.get('trocar')) pedirTroca();
+
+  $('#form-entrar').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    mostrar($('#erro'), '');
+    const botao = e.submitter; botao.disabled = true;
+    try {
+      senhaDigitada = $('#senha').value;
+      const u = await enviar('/api/auth/login', { email: $('#email').value, senha: senhaDigitada });
+      if (u.trocar_senha) pedirTroca(); else location.href = volta;
+    } catch (err) { mostrar($('#erro'), err.message); }
+    finally { botao.disabled = false; }
+  });
+
+  $('#form-trocar').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    mostrar($('#erro2'), '');
+    if ($('#nova').value !== $('#nova2').value) { mostrar($('#erro2'), 'As duas senhas não são iguais.'); return; }
+    const botao = e.submitter; botao.disabled = true;
+    try {
+      await enviar('/api/auth/senha', { atual: $('#atual').value, nova: $('#nova').value });
+      location.href = volta;
+    } catch (err) { mostrar($('#erro2'), err.message); }
+    finally { botao.disabled = false; }
+  });
+</script>
+</body>
+</html>

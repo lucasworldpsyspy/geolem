@@ -1,0 +1,101 @@
+/* GeoLEM: estilo das páginas de conta, carteira, laudos, equipe e documentos */
+:root {
+  --bg: #0e1411; --painel: #141c18; --painel-2: #1b2520; --borda: #2a3830;
+  --texto: #e7eee9; --suave: #97a89d; --marca: #4cc38a; --marca-tinta: #062a1b;
+  --ok: #3fb87f; --warn: #f5a524; --bad: #e5484d; --info: #5aa9e6; --raio: 10px;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--bg); color: var(--texto);
+  font: 14px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+button, select, input { font: inherit; }
+a { color: var(--marca); }
+:focus-visible { outline: 2px solid var(--marca); outline-offset: 2px; }
+h1 { font-size: 22px; margin: 0; }
+h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .8px; color: var(--suave); margin: 0 0 10px; }
+[hidden] { display: none !important; }
+
+/* Barra superior */
+.barra { display: flex; align-items: center; gap: 18px; padding: 10px 20px; border-bottom: 1px solid var(--borda);
+  background: var(--painel); position: sticky; top: 0; z-index: 5; min-height: 55px; }
+.barra .marca { display: flex; align-items: center; gap: 9px; color: var(--texto); text-decoration: none; font-weight: 700; font-size: 17px; }
+.barra .marca img { width: 30px; height: 30px; }
+.barra nav { display: flex; gap: 4px; flex-wrap: wrap; }
+.barra nav a { color: var(--suave); text-decoration: none; padding: 6px 12px; border-radius: 8px; }
+.barra nav a:hover { color: var(--texto); background: var(--painel-2); }
+.barra nav a[aria-current="page"] { color: var(--texto); background: var(--painel-2); font-weight: 600; }
+.barra .conta { margin-left: auto; display: flex; align-items: center; gap: 12px; font-size: 13px; color: var(--suave); }
+.barra .conta b { color: var(--texto); font-weight: 600; }
+
+.pagina { max-width: 1240px; margin: 0 auto; padding: 24px 20px 60px; display: flex; flex-direction: column; gap: 20px; }
+.cabecalho { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.cabecalho p { margin: 4px 0 0; color: var(--suave); }
+.caixa { background: var(--painel); border: 1px solid var(--borda); border-radius: var(--raio); padding: 16px; }
+
+.btn { color: var(--texto); background: var(--painel-2); border: 1px solid var(--borda); border-radius: 8px;
+  padding: 8px 14px; cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.btn:hover:not(:disabled) { border-color: var(--marca); }
+.btn:disabled { opacity: .45; cursor: not-allowed; }
+.btn-primario { background: var(--marca); border-color: var(--marca); color: var(--marca-tinta); font-weight: 600; }
+.btn-perigo:hover:not(:disabled) { border-color: var(--bad); color: #ff9a9c; }
+.btn-peq { padding: 4px 10px; font-size: 12.5px; }
+.botoes { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+
+label.campo { display: flex; flex-direction: column; gap: 5px; font-size: 13px; color: var(--suave); }
+input[type=text], input[type=email], input[type=password], input[type=search], select {
+  color: var(--texto); background: var(--bg); border: 1px solid var(--borda); border-radius: 8px; padding: 9px 11px; width: 100%; }
+.erro { color: #ff8a8d; font-size: 13px; margin: 0; }
+.aviso { color: var(--suave); font-size: 12.5px; margin: 0; }
+.sucesso { color: #7fe0ae; font-size: 13px; margin: 0; }
+
+.selo { font-size: 11.5px; font-weight: 700; white-space: nowrap; padding: 2px 9px; border-radius: 99px; display: inline-block; }
+.selo.ok { background: var(--ok); color: #04210f; } .selo.warn { background: var(--warn); color: #2a1a00; }
+.selo.bad { background: var(--bad); color: #fff; }
+.selo.fila { background: var(--painel-2); color: var(--suave); border: 1px solid var(--borda); }
+.selo.erro { background: transparent; color: #ff9a9c; border: 1px solid var(--bad); }
+
+/* Indicadores */
+.indicadores { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; }
+.indicador { background: var(--painel); border: 1px solid var(--borda); border-radius: var(--raio); padding: 14px 16px; }
+.indicador .n { font-size: 28px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.1; }
+.indicador .t { color: var(--suave); font-size: 12.5px; margin-top: 4px; }
+.indicador.ok .n { color: var(--ok); } .indicador.warn .n { color: var(--warn); } .indicador.bad .n { color: var(--bad); }
+
+/* Barra de proporção da carteira */
+.proporcao { display: flex; height: 10px; border-radius: 99px; overflow: hidden; background: var(--painel-2); }
+.proporcao span { display: block; }
+.proporcao .ok { background: var(--ok); } .proporcao .warn { background: var(--warn); }
+.proporcao .bad { background: var(--bad); } .proporcao .fila { background: #3a4a41; }
+
+/* Tabelas */
+.tabela-wrap { overflow-x: auto; border: 1px solid var(--borda); border-radius: var(--raio); }
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--borda); vertical-align: top; }
+th { color: var(--suave); font-weight: 600; font-size: 12px; background: var(--painel); }
+tr:last-child td { border-bottom: 0; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+td small { display: block; color: var(--suave); }
+tbody tr:hover { background: var(--painel); }
+.vazio { text-align: center; color: var(--suave); padding: 28px; }
+
+/* Diálogo */
+dialog { background: var(--painel); color: var(--texto); border: 1px solid var(--borda); border-radius: 12px; padding: 20px;
+  max-width: 560px; width: calc(100% - 32px); }
+dialog::backdrop { background: rgba(0,0,0,.6); }
+dialog h3 { margin: 0 0 12px; }
+dialog form { display: flex; flex-direction: column; gap: 12px; }
+.segredo { font: 18px ui-monospace, Consolas, monospace; background: var(--bg); border: 1px dashed var(--marca);
+  border-radius: 8px; padding: 10px; text-align: center; user-select: all; letter-spacing: 1px; }
+
+.rodape { color: var(--suave); font-size: 12px; text-align: center; padding: 20px; }
+.rodape a { color: var(--suave); }
+
+/* Documentos (termos e privacidade) */
+.documento { max-width: 780px; margin: 0 auto; padding: 32px 20px 60px; }
+.documento h1 { font-size: 26px; margin-bottom: 4px; }
+.documento h2 { margin-top: 28px; }
+.documento p, .documento li { color: #cfdad3; }
+
+@media (max-width: 760px) {
+  .barra { flex-wrap: wrap; gap: 10px; }
+  .barra .conta { margin-left: 0; width: 100%; justify-content: space-between; }
+}

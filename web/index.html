@@ -16,7 +16,20 @@
       font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
     button, select, input { font: inherit; }
     :focus-visible { outline: 2px solid var(--marca); outline-offset: 2px; }
-    .app { display: flex; height: 100vh; }
+    .app { display: flex; height: calc(100vh - 55px); }
+    /* Barra superior comum (conta.js) */
+    .barra { display: flex; align-items: center; gap: 18px; padding: 10px 20px; border-bottom: 1px solid var(--borda);
+      background: var(--painel); min-height: 55px; }
+    .barra .marca { display: flex; align-items: center; gap: 9px; color: var(--texto); text-decoration: none; font-weight: 700; font-size: 17px; }
+    .barra .marca img { width: 30px; height: 30px; }
+    .barra nav { display: flex; gap: 4px; flex-wrap: wrap; }
+    .barra nav a { color: var(--suave); text-decoration: none; padding: 6px 12px; border-radius: 8px; }
+    .barra nav a:hover { color: var(--texto); background: var(--painel-2); }
+    .barra nav a[aria-current="page"] { color: var(--texto); background: var(--painel-2); font-weight: 600; }
+    .barra .conta { margin-left: auto; display: flex; align-items: center; gap: 12px; font-size: 13px; color: var(--suave); }
+    .barra .conta b { color: var(--texto); font-weight: 600; }
+    .barra .btn-peq { padding: 4px 10px; font-size: 12.5px; }
+    .na-carteira { font-size: 12.5px; color: #7fe0ae; margin: 6px 0 0; }
     .painel { width: 400px; flex: none; overflow-y: auto; background: var(--painel); border-right: 1px solid var(--borda);
       padding: 16px; display: flex; flex-direction: column; gap: 14px; }
     .area-mapa { flex: 1; min-width: 0; position: relative; }
@@ -120,16 +133,9 @@
   </style>
 </head>
 <body>
+  <header class="barra" data-pagina="analise"></header>
   <div class="app">
     <aside class="painel">
-      <header class="topo">
-        <div class="logo" aria-hidden="true">◈</div>
-        <div>
-          <h1>GeoLEM</h1>
-          <p class="sub">Compliance socioambiental de áreas rurais</p>
-        </div>
-        <span class="tag">beta</span>
-      </header>
 
       <details id="bases" class="bases"><summary>Carregando bases…</summary></details>
 
@@ -169,6 +175,9 @@
         <button id="btn-analisar" class="btn btn-primario btn-largo" type="button" disabled>Analisar conformidade</button>
         <div id="resultado" hidden></div>
         <button id="btn-laudo" class="btn btn-largo" type="button" hidden>⎙ Laudo em PDF com QR code</button>
+        <button id="btn-carteira" class="btn btn-largo" type="button" hidden
+                title="Monitora esta área toda semana e avisa se a situação piorar">＋ Adicionar à carteira</button>
+        <p id="msg-carteira" class="na-carteira" hidden></p>
         <button id="btn-eudr" class="btn btn-largo" type="button" hidden
                 title="Arquivo de geolocalização para a declaração de diligência no sistema TRACES da União Europeia">⇩ Geolocalização para o EUDR (GeoJSON)</button>
       </section>
@@ -193,6 +202,7 @@
   </div>
 
 
+  <script src="/conta.js"></script>
   <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6.5.0/turf.min.js"></script>
   <script>
@@ -208,6 +218,7 @@
 
     async function api(caminho, opcoes) {
       const r = await fetch(API + caminho, opcoes);
+      if (r.status === 401) { location.href = '/entrar.html?volta=/'; throw new Error('Sessão expirada.'); }
       let corpo = null;
       try { corpo = await r.json(); } catch (_) { /* sem corpo JSON */ }
       if (!r.ok) {
@@ -368,6 +379,8 @@
       $('#resultado').hidden = true;
       $('#btn-laudo').hidden = true;
       $('#btn-eudr').hidden = true;
+      $('#btn-carteira').hidden = true;
+      $('#msg-carteira').hidden = true;
       $('#btn-analisar').disabled = false;
       const im = area.imovel || {};
       const linhas = [
@@ -475,6 +488,8 @@
       $('#resultado').hidden = false;
       $('#btn-laudo').hidden = false;
       $('#btn-eudr').hidden = false;
+      $('#btn-carteira').hidden = false;
+      $('#btn-carteira').disabled = false;
     }
 
     // Contorno da área sobre o recorte: viewBox em graus (latitude invertida, pois o SVG cresce para baixo)
@@ -503,6 +518,28 @@
     $('#btn-laudo').addEventListener('click', () => {
       const r = estado.resultado;
       if (r) window.open(`/api/analises/${encodeURIComponent(r.protocolo)}/laudo.pdf`, '_blank', 'noopener');
+    });
+    $('#btn-carteira').addEventListener('click', async () => {
+      const r = estado.resultado, area = estado.area;
+      if (!r || !area) return;
+      const fornecedor = prompt('Fornecedor desta área (opcional):', '') ;
+      if (fornecedor === null) return;
+      const b = $('#btn-carteira');
+      b.disabled = true;
+      try {
+        await api('/api/carteira/areas', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            nome: area.nome, imovel_id: area.imovel ? area.imovel.id : null,
+            geometria: area.imovel ? null : area.feature.geometry,
+            fornecedor: fornecedor.trim() || null,
+            reserva_legal_ha: $('#rl').value === '' ? null : Number($('#rl').value),
+          }),
+        });
+        b.hidden = true;
+        $('#msg-carteira').innerHTML = '✓ Adicionada à carteira. <a href="/carteira.html">Ver carteira</a>';
+        $('#msg-carteira').hidden = false;
+      } catch (err) { mostrarErro(err.message); b.disabled = false; }
     });
     $('#btn-eudr').addEventListener('click', () => {
       const r = estado.resultado;

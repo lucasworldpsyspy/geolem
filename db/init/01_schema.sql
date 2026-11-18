@@ -145,3 +145,116 @@ CREATE INDEX IF NOT EXISTS imoveis_geom_idx ON geo.imoveis USING gist (geom);
 CREATE INDEX IF NOT EXISTS imoveis_codigo_idx ON geo.imoveis (codigo);
 CREATE INDEX IF NOT EXISTS imoveis_nome_trgm_idx ON geo.imoveis USING gin (nome gin_trgm_ops);
 CREATE INDEX IF NOT EXISTS analises_geom_idx ON geo.analises USING gist (geom);
+
+-- =====================================================================
+-- Aplicação: empresas, usuários, sessões, auditoria, carteira e fila
+-- =====================================================================
+CREATE SCHEMA IF NOT EXISTS app;
+
+CREATE TABLE IF NOT EXISTS app.empresas (
+  id         serial PRIMARY KEY,
+  nome       text NOT NULL,
+  cnpj       text,
+  ativa      boolean NOT NULL DEFAULT true,
+  criado_em  timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS app.usuarios (
+  id             serial PRIMARY KEY,
+  empresa_id     integer NOT NULL REFERENCES app.empresas(id),
+  nome           text NOT NULL,
+  email          text NOT NULL,
+  senha_hash     text NOT NULL,
+  papel          text NOT NULL DEFAULT 'analista' CHECK (papel IN ('admin', 'analista')),
+  ativo          boolean NOT NULL DEFAULT true,
+  trocar_senha   boolean NOT NULL DEFAULT true,   -- senha provisória: troca obrigatória no 1º acesso
+  criado_em      timestamptz NOT NULL DEFAULT now(),
+  ultimo_acesso  timestamptz
+);
+CREATE UNIQUE INDEX IF NOT EXISTS usuarios_email_idx ON app.usuarios (lower(email));
+
+-- Só o SHA-256 do token fica no banco: um vazamento da tabela não dá acesso a ninguém
+CREATE TABLE IF NOT EXISTS app.sessoes (
+  token_hash  text PRIMARY KEY,
+  usuario_id  integer NOT NULL REFERENCES app.usuarios(id) ON DELETE CASCADE,
+  criado_em   timestamptz NOT NULL DEFAULT now(),
+  visto_em    timestamptz NOT NULL DEFAULT now(),
+  expira_em   timestamptz NOT NULL,
+  ip          text,
+  agente      text
+);
+CREATE INDEX IF NOT EXISTS sessoes_usuario_idx ON app.sessoes (usuario_id);
+
+-- Quem fez o quê e quando (login, análises, carteira, usuários)
+CREATE TABLE IF NOT EXISTS app.auditoria (
+  id          bigserial PRIMARY KEY,
+  em          timestamptz NOT NULL DEFAULT now(),
+  empresa_id  integer,
+  usuario_id  integer,
+  acao        text NOT NULL,
+  alvo        text,
+  detalhes    jsonb,
+  ip          text
+);
+CREATE INDEX IF NOT EXISTS auditoria_empresa_idx ON app.auditoria (empresa_id, em DESC);
+
+-- Carteira: áreas (fornecedores) que cada empresa monitora
+CREATE TABLE IF NOT EXISTS app.areas (
+  id                bigserial PRIMARY KEY,
+  empresa_id        integer NOT NULL REFERENCES app.empresas(id),
+  nome              text NOT NULL,
+  fornecedor        text,
+  codigo_externo    text,              -- código do fornecedor no ERP do cliente
+  imovel_id         bigint,
+  municipio         text,
+  reserva_legal_ha  double precision,
+  origem            text,              -- arquivo de onde veio a área
+  area_ha           double precision,
+  geom              geometry(MultiPolygon, 4326) NOT NULL,
+  ativa             boolean NOT NULL DEFAULT true,
+  criado_em         timestamptz NOT NULL DEFAULT now(),
+  criado_por        integer,
+  ultimo_protocolo  text,
+  ultimo_status     text,
+  status_anterior   text,
+  analisado_em      timestamptz
+);
+CREATE INDEX IF NOT EXISTS areas_empresa_idx ON app.areas (empresa_id) WHERE ativa;
+
+-- Fila de análises processada pelo worker (cadastro, reanálise manual e monitoramento semanal)
+CREATE TABLE IF NOT EXISTS app.tarefas (
+  id            bigserial PRIMARY KEY,
+  empresa_id    integer NOT NULL,
+  area_id       bigint NOT NULL REFERENCES app.areas(id) ON DELETE CASCADE,
+  usuario_id    integer,
+  motivo        text NOT NULL DEFAULT 'cadastro',  -- cadastro | manual | monitoramento
+  estado        text NOT NULL DEFAULT 'pendente' CHECK (estado IN ('pendente', 'executando', 'ok', 'erro')),
+  tentativas    integer NOT NULL DEFAULT 0,
+  erro          text,
+  criado_em     timestamptz NOT NULL DEFAULT now(),
+  iniciado_em   timestamptz,
+  concluido_em  timestamptz
+);
+CREATE INDEX IF NOT EXISTS tarefas_pendentes_idx ON app.tarefas (id) WHERE estado = 'pendente';
+CREATE INDEX IF NOT EXISTS tarefas_area_idx ON app.tarefas (area_id);
+
+-- Mudança de situação de uma área da carteira (ex.: Conforme -> Não conforme)
+CREATE TABLE IF NOT EXISTS app.alertas (
+  id           bigserial PRIMARY KEY,
+  empresa_id   integer NOT NULL,
+  area_id      bigint NOT NULL REFERENCES app.areas(id) ON DELETE CASCADE,
+  criado_em    timestamptz NOT NULL DEFAULT now(),
+  de           text,
+  para         text NOT NULL,
+  protocolo    text,
+  resumo       text,
+  lido_em      timestamptz,
+  notificado   boolean NOT NULL DEFAULT false
+);
+CREATE INDEX IF NOT EXISTS alertas_empresa_idx ON app.alertas (empresa_id, criado_em DESC);
+
+-- Cada análise sabe de que empresa, usuário e área da carteira ela é
+ALTER TABLE geo.analises ADD COLUMN IF NOT EXISTS empresa_id integer,
+                         ADD COLUMN IF NOT EXISTS usuario_id integer,
+                         ADD COLUMN IF NOT EXISTS area_id bigint;
+CREATE INDEX IF NOT EXISTS analises_empresa_idx ON geo.analises (empresa_id, criado_em DESC);

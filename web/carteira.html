@@ -1,0 +1,280 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Carteira · GeoLEM</title>
+  <link rel="icon" href="/marca.svg">
+  <link rel="stylesheet" href="/estilo.css">
+  <style>
+    .resumo-topo { display: grid; grid-template-columns: 1fr auto; gap: 8px 20px; align-items: center; }
+    .resumo-topo .legenda { display: flex; gap: 14px; font-size: 12.5px; color: var(--suave); flex-wrap: wrap; }
+    .resumo-topo .legenda span::before { content: ""; display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 5px; background: var(--c); }
+    .alertas { border-color: var(--bad); }
+    .alertas ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+    .alertas li { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+    .alertas li small { color: var(--suave); width: 100%; }
+    .filtros { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+    .filtros input[type=search] { max-width: 280px; }
+    .filtros .chip { border-radius: 99px; padding: 5px 12px; font-size: 12.5px; }
+    .filtros .chip[aria-pressed="true"] { background: var(--marca); border-color: var(--marca); color: var(--marca-tinta); font-weight: 600; }
+    .mudou { color: #ff9a9c; font-size: 11.5px; display: block; }
+    .acoes-linha { display: flex; gap: 6px; justify-content: flex-end; }
+    .modelo { font: 12px ui-monospace, Consolas, monospace; background: var(--bg); border: 1px solid var(--borda); border-radius: 8px; padding: 8px 10px; white-space: pre; overflow-x: auto; }
+    .resultado-import li { font-size: 12.5px; color: var(--suave); }
+    .zona { border: 2px dashed var(--borda); border-radius: 10px; padding: 22px; text-align: center; color: var(--suave); cursor: pointer; }
+    .zona.sobre { border-color: var(--marca); color: var(--texto); }
+  </style>
+</head>
+<body>
+  <header class="barra" data-pagina="carteira"></header>
+
+  <main class="pagina">
+    <div class="cabecalho">
+      <div>
+        <h1>Carteira de fornecedores</h1>
+        <p>Cada área é reanalisada toda semana, depois da atualização das bases oficiais. Se a situação piorar, você recebe um alerta.</p>
+      </div>
+      <div class="botoes">
+        <button id="btn-importar" class="btn btn-primario" type="button">⇪ Importar áreas</button>
+        <button id="btn-reanalisar" class="btn" type="button">↻ Reanalisar tudo</button>
+        <a class="btn" href="/api/carteira/exportar.csv">⇩ Planilha</a>
+        <a class="btn" href="/api/carteira/eudr.geojson" title="Geolocalização de todas as áreas Conformes, para a declaração de diligência no TRACES">⇩ EUDR (conformes)</a>
+      </div>
+    </div>
+
+    <section class="indicadores" id="indicadores" aria-live="polite"></section>
+
+    <section class="caixa resumo-topo" id="proporcao" hidden>
+      <div class="proporcao" id="barra-proporcao" aria-hidden="true"></div>
+      <span class="aviso" id="texto-fila"></span>
+      <div class="legenda">
+        <span style="--c:var(--ok)">Conforme</span><span style="--c:var(--warn)">Atenção</span>
+        <span style="--c:var(--bad)">Não conforme</span><span style="--c:#3a4a41">Aguardando análise</span>
+      </div>
+    </section>
+
+    <section class="caixa alertas" id="alertas" hidden>
+      <div class="cabecalho" style="margin-bottom:10px">
+        <h2 style="margin:0">Alertas: situação piorou</h2>
+        <button id="btn-lidos" class="btn btn-peq" type="button">Marcar como lidos</button>
+      </div>
+      <ul id="lista-alertas"></ul>
+    </section>
+
+    <section>
+      <div class="cabecalho" style="margin-bottom:10px">
+        <div class="filtros" role="group" aria-label="Filtrar por situação">
+          <input id="filtro-texto" type="search" placeholder="Buscar por nome, fornecedor ou código" aria-label="Buscar na carteira">
+          <button class="btn chip" data-filtro="" aria-pressed="true" type="button">Todas</button>
+          <button class="btn chip" data-filtro="bad" aria-pressed="false" type="button">Não conformes</button>
+          <button class="btn chip" data-filtro="warn" aria-pressed="false" type="button">Atenção</button>
+          <button class="btn chip" data-filtro="ok" aria-pressed="false" type="button">Conformes</button>
+          <button class="btn chip" data-filtro="fila" aria-pressed="false" type="button">Na fila</button>
+        </div>
+        <span class="aviso" id="contagem"></span>
+      </div>
+      <div class="tabela-wrap">
+        <table>
+          <thead><tr>
+            <th>Área / fornecedor</th><th>Código ERP</th><th>Município</th><th class="num">Área (ha)</th>
+            <th>Situação</th><th>Última análise</th><th></th>
+          </tr></thead>
+          <tbody id="linhas"><tr><td colspan="7" class="vazio">Carregando…</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <dialog id="dlg-importar">
+    <form method="dialog" id="form-importar">
+      <h3>Importar áreas para a carteira</h3>
+      <p class="aviso">Duas formas, no mesmo botão:</p>
+      <p style="margin:0"><b>Planilha (CSV ou Excel)</b> com o código SIGEF ou CAR de cada imóvel. Colunas aceitas:</p>
+      <div class="modelo">codigo;nome;fornecedor;codigo_erp;reserva_legal_ha
+5ba5ff8d-08e2-475c-9c8d-9f4df9414761;Fazenda Boa Vista;João Silva;F1023;610</div>
+      <p style="margin:0"><b>Arquivo geográfico</b> (KML, KMZ, Shapefile em .zip, GeoJSON ou GPKG): cada polígono vira uma área.
+        Os atributos <i>nome</i>, <i>fornecedor</i> e <i>codigo_erp</i> são aproveitados se existirem.</p>
+      <label class="zona" id="zona">
+        <input id="arquivo" type="file" accept=".csv,.xlsx,.kml,.kmz,.zip,.geojson,.json,.gpkg" hidden>
+        <span id="zona-texto">Clique para escolher o arquivo ou arraste aqui</span>
+      </label>
+      <p id="erro-importar" class="erro" role="alert" hidden></p>
+      <div id="resultado-importar" class="resultado-import" hidden></div>
+      <div class="botoes" style="justify-content:flex-end">
+        <button class="btn" value="fechar" type="submit">Fechar</button>
+        <button class="btn btn-primario" id="btn-enviar" type="button" disabled>Importar</button>
+      </div>
+    </form>
+  </dialog>
+
+  <p class="rodape"><a href="/termos.html">Termos de uso</a> · <a href="/privacidade.html">Privacidade</a></p>
+
+<script src="/conta.js"></script>
+<script>
+  const $ = (s) => document.querySelector(s);
+  const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const ROTULO = { ok: 'Conforme', warn: 'Atenção', bad: 'Não conforme', info: 'Informativo' };
+  const fmtN = (v, c = 0) => Number(v).toLocaleString('pt-BR', { minimumFractionDigits: c, maximumFractionDigits: c });
+  const fmtData = (iso) => iso ? new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '-';
+  let dados = { resumo: {}, areas: [] };
+  let filtro = '';
+  let temporizador;
+
+  async function api(url, opcoes) {
+    const r = await fetch(url, opcoes);
+    if (r.status === 401) { location.href = '/entrar.html?volta=/carteira.html'; throw new Error('sessão expirada'); }
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(typeof d.detail === 'string' ? d.detail : `Erro ${r.status}`);
+    return d;
+  }
+
+  async function carregar() {
+    dados = await api('/api/carteira');
+    desenharResumo();
+    desenharTabela();
+    clearTimeout(temporizador);
+    // Enquanto houver fila, atualiza sozinho
+    if (dados.resumo.na_fila > 0) temporizador = setTimeout(carregar, 4000);
+    if (dados.resumo.alertas_nao_lidos > 0) carregarAlertas(); else $('#alertas').hidden = true;
+  }
+
+  function desenharResumo() {
+    const r = dados.resumo;
+    const total = r.areas || 0;
+    const pct = (n) => total ? ` · ${fmtN(100 * n / total)}%` : '';
+    $('#indicadores').innerHTML = [
+      ['', fmtN(total), `áreas · ${fmtN(r.area_ha)} ha`],
+      ['ok', fmtN(r.ok), 'Conformes' + pct(r.ok)],
+      ['warn', fmtN(r.warn), 'Atenção' + pct(r.warn)],
+      ['bad', fmtN(r.bad), `Não conformes${pct(r.bad)} · ${fmtN(r.area_bad_ha)} ha`],
+      ['', fmtN(r.alertas_nao_lidos), 'alertas não lidos'],
+    ].map(([c, n, t]) => `<div class="indicador ${c}"><div class="n">${n}</div><div class="t">${t}</div></div>`).join('');
+    $('#proporcao').hidden = !total;
+    const partes = [['ok', r.ok], ['warn', r.warn], ['bad', r.bad], ['fila', r.sem_analise]];
+    $('#barra-proporcao').innerHTML = partes.map(([c, n]) => n ? `<span class="${c}" style="width:${100 * n / total}%"></span>` : '').join('');
+    $('#texto-fila').textContent = r.na_fila
+      ? `Analisando… ${fmtN(r.na_fila)} na fila (cerca de ${Math.max(1, Math.ceil(r.na_fila * 6 / 60))} min)`
+      : (r.ultima_analise ? `Última análise: ${fmtData(r.ultima_analise)}` : '');
+  }
+
+  function situacao(a) {
+    if (a.fila === 'pendente' || a.fila === 'executando') return `<span class="selo fila">${a.fila === 'executando' ? 'Analisando…' : 'Na fila'}</span>`;
+    if (a.fila === 'erro' && !a.ultimo_status) return `<span class="selo erro" title="${esc(a.erro)}">Falhou</span><small>${esc(a.erro)}</small>`;
+    if (!a.ultimo_status) return '<span class="selo fila">Aguardando</span>';
+    let h = `<span class="selo ${a.ultimo_status}">${ROTULO[a.ultimo_status]}</span>`;
+    if (a.status_anterior && a.status_anterior !== a.ultimo_status) h += `<span class="mudou">antes: ${ROTULO[a.status_anterior]}</span>`;
+    return h;
+  }
+
+  function desenharTabela() {
+    const t = $('#filtro-texto').value.trim().toLowerCase();
+    const linhas = dados.areas.filter((a) => {
+      if (filtro === 'fila' && !(a.fila === 'pendente' || a.fila === 'executando')) return false;
+      if (filtro && filtro !== 'fila' && a.ultimo_status !== filtro) return false;
+      return !t || [a.nome, a.fornecedor, a.codigo_externo, a.municipio].some((v) => (v || '').toLowerCase().includes(t));
+    });
+    $('#contagem').textContent = `${fmtN(linhas.length)} de ${fmtN(dados.areas.length)} áreas`;
+    if (!dados.areas.length) {
+      $('#linhas').innerHTML = '<tr><td colspan="7" class="vazio">Sua carteira está vazia. Use <b>Importar áreas</b> para subir a lista de fornecedores, ou adicione áreas pela tela de Análise.</td></tr>';
+      return;
+    }
+    $('#linhas').innerHTML = linhas.map((a) => `<tr>
+      <td><b>${esc(a.nome)}</b><small>${esc(a.fornecedor || '')}</small></td>
+      <td>${esc(a.codigo_externo || '-')}</td>
+      <td>${esc(a.municipio || '-')}</td>
+      <td class="num">${a.area_ha != null ? fmtN(a.area_ha, 1) : '-'}</td>
+      <td>${situacao(a)}</td>
+      <td>${a.analisado_em ? fmtData(a.analisado_em) : '-'}${a.ultimo_protocolo ? `<small>${esc(a.ultimo_protocolo)}</small>` : ''}</td>
+      <td><div class="acoes-linha">
+        ${a.ultimo_protocolo ? `<a class="btn btn-peq" href="/api/analises/${encodeURIComponent(a.ultimo_protocolo)}/laudo.pdf" target="_blank" rel="noopener">Laudo</a>` : ''}
+        <button class="btn btn-peq" data-reanalisar="${a.id}" type="button" title="Reanalisar agora">↻</button>
+        <button class="btn btn-peq btn-perigo" data-remover="${a.id}" data-nome="${esc(a.nome)}" type="button" title="Remover da carteira">✕</button>
+      </div></td></tr>`).join('') || '<tr><td colspan="7" class="vazio">Nenhuma área com esse filtro.</td></tr>';
+  }
+
+  async function carregarAlertas() {
+    const lista = (await api('/api/carteira/alertas')).filter((a) => !a.lido_em);
+    $('#alertas').hidden = !lista.length;
+    $('#lista-alertas').innerHTML = lista.map((a) => `<li>
+      <b>${esc(a.nome)}</b>${a.fornecedor ? ` (${esc(a.fornecedor)})` : ''}:
+      <span class="selo ${a.de}">${ROTULO[a.de] || a.de}</span> → <span class="selo ${a.para}">${ROTULO[a.para]}</span>
+      <a href="/api/analises/${encodeURIComponent(a.protocolo)}/laudo.pdf" target="_blank" rel="noopener">ver laudo</a>
+      <small>${fmtData(a.criado_em)} · ${esc(a.resumo || '')}</small></li>`).join('');
+  }
+
+  // Filtros
+  document.querySelectorAll('[data-filtro]').forEach((b) => b.addEventListener('click', () => {
+    filtro = b.dataset.filtro;
+    document.querySelectorAll('[data-filtro]').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+    desenharTabela();
+  }));
+  $('#filtro-texto').addEventListener('input', desenharTabela);
+
+  // Ações por linha
+  $('#linhas').addEventListener('click', async (e) => {
+    const re = e.target.closest('[data-reanalisar]');
+    const rm = e.target.closest('[data-remover]');
+    try {
+      if (re) {
+        await api('/api/carteira/reanalisar', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids: [Number(re.dataset.reanalisar)] }) });
+        carregar();
+      }
+      if (rm && confirm(`Remover "${rm.dataset.nome}" da carteira? Os laudos já emitidos continuam válidos.`)) {
+        await api(`/api/carteira/areas/${rm.dataset.remover}`, { method: 'DELETE' });
+        carregar();
+      }
+    } catch (err) { alert(err.message); }
+  });
+
+  $('#btn-reanalisar').addEventListener('click', async () => {
+    if (!dados.areas.length || !confirm(`Reanalisar as ${dados.areas.length} áreas da carteira agora?`)) return;
+    try {
+      const r = await api('/api/carteira/reanalisar', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+      carregar();
+      if (!r.na_fila) alert('Todas as áreas já estão na fila.');
+    } catch (err) { alert(err.message); }
+  });
+
+  $('#btn-lidos').addEventListener('click', async () => {
+    await api('/api/carteira/alertas/lidos', { method: 'POST' });
+    carregar();
+  });
+
+  // Importação
+  let arquivo = null;
+  function escolher(f) {
+    arquivo = f || null;
+    $('#zona-texto').textContent = arquivo ? `${arquivo.name} (${fmtN(arquivo.size / 1024)} KB)` : 'Clique para escolher o arquivo ou arraste aqui';
+    $('#btn-enviar').disabled = !arquivo;
+    $('#erro-importar').hidden = true;
+    $('#resultado-importar').hidden = true;
+  }
+  $('#btn-importar').addEventListener('click', () => { escolher(null); $('#dlg-importar').showModal(); });
+  $('#arquivo').addEventListener('change', (e) => escolher(e.target.files[0]));
+  const zona = $('#zona');
+  ['dragenter', 'dragover'].forEach((ev) => zona.addEventListener(ev, (e) => { e.preventDefault(); zona.classList.add('sobre'); }));
+  ['dragleave', 'drop'].forEach((ev) => zona.addEventListener(ev, (e) => { e.preventDefault(); zona.classList.remove('sobre'); }));
+  zona.addEventListener('drop', (e) => escolher(e.dataTransfer.files[0]));
+  $('#btn-enviar').addEventListener('click', async () => {
+    const b = $('#btn-enviar');
+    b.disabled = true; b.textContent = 'Importando…';
+    try {
+      const fd = new FormData(); fd.append('arquivo', arquivo);
+      const r = await api('/api/carteira/importar', { method: 'POST', body: fd });
+      const ign = r.ignoradas;
+      $('#resultado-importar').innerHTML = `<p class="sucesso">${fmtN(r.importadas)} área(s) importada(s) e na fila de análise.</p>` +
+        (ign.length ? `<p class="aviso">${fmtN(ign.length)} linha(s) ignorada(s):</p><ul>${ign.slice(0, 30).map((i) => `<li>Linha ${i.linha}: ${esc(i.motivo)}</li>`).join('')}${ign.length > 30 ? '<li>…</li>' : ''}</ul>` : '');
+      $('#resultado-importar').hidden = false;
+      arquivo = null;
+      carregar();
+    } catch (err) {
+      $('#erro-importar').textContent = err.message; $('#erro-importar').hidden = false;
+      b.disabled = false;
+    } finally { b.textContent = 'Importar'; }
+  });
+
+  carregar().catch((err) => { $('#linhas').innerHTML = `<tr><td colspan="7" class="vazio">${esc(err.message)}</td></tr>`; });
+</script>
+</body>
+</html>

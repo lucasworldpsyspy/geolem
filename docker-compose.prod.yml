@@ -1,9 +1,13 @@
 # Produção: soma-se ao docker-compose.yml
 #   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 # O Caddy recebe o tráfego da internet, emite o certificado HTTPS sozinho (Let's Encrypt)
-# e pede usuário e senha para tudo, menos a verificação pública de laudos.
+# O acesso é controlado pelo login do próprio sistema (usuários por empresa).
 services:
   api:
+    environment:
+      URL_PUBLICA: https://${DOMINIO:?defina DOMINIO no .env}
+
+  worker:
     environment:
       URL_PUBLICA: https://${DOMINIO:?defina DOMINIO no .env}
 
@@ -17,8 +21,6 @@ services:
       - "443:443"
     environment:
       DOMINIO: ${DOMINIO}
-      ACESSO_USUARIO: ${ACESSO_USUARIO:?defina ACESSO_USUARIO no .env}
-      ACESSO_SENHA_HASH: ${ACESSO_SENHA_HASH:?defina ACESSO_SENHA_HASH no .env}
     volumes:
       - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_dados:/data
