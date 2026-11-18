@@ -23,7 +23,7 @@ COLUNAS = {
     "geo.unidades_conservacao": ["id_origem", "nome", "categoria", "grupo", "esfera"],
     "geo.terras_indigenas": ["id_origem", "nome", "etnia", "fase"],
     "geo.alertas_desmatamento": ["id_origem", "data_deteccao", "data_publicacao", "area_ha", "classe", "situacao",
-                                 "satelite"],
+                                 "satelite", "municipio", "uf"],
     "geo.territorios": ["id_origem", "tipo", "nome", "municipio", "uf", "fase", "familias"],
     "geo.imoveis": ["tipo", "codigo", "nome", "municipio", "uf", "situacao"],
 }
@@ -166,9 +166,10 @@ def m_embargo(p: dict) -> dict:
 def m_deter(p: dict) -> dict:
     km2 = numero(p.get("areatotalkm"))
     return {"id_origem": texto(p.get("gid")), "data_deteccao": data(p.get("view_date")),
-            "data_publicacao": data(p.get("publish_month")) or data(p.get("created_date")),
+            "data_publicacao": data(p.get("created_date")) or data(p.get("publish_month")),
             "area_ha": km2 * 100 if km2 is not None else None, "classe": texto(p.get("classname")),
-            "situacao": None, "satelite": " ".join(filter(None, [texto(p.get("satellite")), texto(p.get("sensor"))])) or None}
+            "situacao": None, "satelite": " ".join(filter(None, [texto(p.get("satellite")), texto(p.get("sensor"))])) or None,
+            "municipio": texto(p.get("municipality")), "uf": texto(p.get("uf"))}
 
 
 def m_mapbiomas(p: dict) -> dict:
@@ -177,7 +178,8 @@ def m_mapbiomas(p: dict) -> dict:
             "data_publicacao": data(p.get("publishedAt")), "area_ha": numero(p.get("areaHa")),
             "classe": ", ".join(classes) if isinstance(classes, list) else texto(classes),
             "situacao": texto(p.get("statusName")),
-            "satelite": ", ".join(p["sources"]) if isinstance(p.get("sources"), list) else texto(p.get("sources"))}
+            "satelite": ", ".join(p["sources"]) if isinstance(p.get("sources"), list) else texto(p.get("sources")),
+            "municipio": None, "uf": None}
 
 
 def m_quilombo(p: dict) -> dict:

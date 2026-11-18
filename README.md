@@ -31,6 +31,11 @@ geolem/
 │   │   ├── worker.py       fila de análises e monitoramento semanal
 │   │   ├── avisos.py       resumo de alertas por e-mail
 │   │   ├── planilha.py     leitura da planilha da carteira (CSV/Excel)
+│   │   ├── licencas.py     planos, validade e limites de cada empresa
+│   │   ├── painel.py       dashboard da carteira (evolução, motivos, municípios, mapa)
+│   │   ├── observatorio.py números públicos da região e relatório por município
+│   │   ├── rotas_publico.py observatório: consulta grátis, relatório e boletim (captura de leads)
+│   │   ├── rotas_admin.py  admin da plataforma: CRM, clientes, licenças e leads
 │   │   └── arquivos.py     leitura de KML, KMZ, SHP (zip), GeoJSON e GPKG
 │   ├── ingest/             carga das bases públicas
 │   │   ├── fontes.py       catálogo de fontes e mapeamento de campos
@@ -38,7 +43,7 @@ geolem/
 │   │   ├── carregar.py     carga transacional com registro em geo.cargas
 │   │   └── car.py          importador do shapefile do SICAR
 │   └── tests/              testes das regras
-├── web/                    frontend: análise (MapLibre), carteira, laudos, equipe, login, termos e privacidade
+├── web/                    frontend: painel, carteira, análise, laudos, equipe, admin, observatório, login e documentos
 │   └── verificar.html      página pública de verificação de laudo (destino do QR code)
 ├── dados/                  arquivos baixados manualmente (CAR); fora do git
 ├── vendas/                 apresentação: laudo de exemplo e roteiro de reunião
@@ -131,7 +136,35 @@ Abra http://localhost:8000. A documentação da API fica em http://localhost:800
 - **Registro de atividades** (`app.auditoria`): logins (inclusive os recusados), laudos, carteira e mudanças de acesso,
   com data, usuário e IP. Aparece na página Equipe.
 - Públicos sem login: a tela de entrada, os termos, a privacidade e a verificação de laudos pelo QR code.
-- Linha de comando: `python -m app.contas nova-empresa | novo-usuario | redefinir-senha | listar`.
+- Linha de comando: `python -m app.contas nova-empresa [--operadora] | novo-usuario | redefinir-senha | superadmin | listar`.
+
+### Painel da carteira (`/painel.html`)
+Mapa dos fornecedores colorido pela situação (clique abre o laudo), motivos das ocorrências, evolução semanal
+(reconstruída a partir do histórico de laudos), concentração por município e por fornecedor e idade da última análise.
+É a tela inicial depois do login.
+
+### Observatório público e leads (`/observatorio.html`)
+Página sem login com números agregados da região (nunca de um imóvel identificado): % de imóveis SIGEF com
+desmatamento PRODES após 2020, desmatamento por ano, alertas DETER por mês e ranking de municípios. Três formas de
+captar contato, todas com consentimento registrado (texto, data e IP):
+- **Consulta grátis:** resultado resumido de um imóvel pelo código SIGEF/CAR (sem PDF nem protocolo). Limite de
+  5 consultas por IP e 3 por e-mail por dia.
+- **Relatório do município:** PDF de uma página com os números do município.
+- **Boletim semanal:** e-mail toda segunda com os alertas DETER publicados no município, com link de descadastro.
+  Enviado por `python -m app.worker boletim` (no cron, depois da carga) quando o SMTP estiver configurado.
+
+### Admin da plataforma (`/admin.html`, só para você)
+- **Visão geral:** receita mensal (MRR), clientes ativos e em teste, licenças vencendo, valor em negociação, leads e uso.
+- **Possíveis clientes (CRM):** funil por etapa (novo → contato → reunião → piloto → proposta → cliente/perdido),
+  próximo passo com data, histórico de contatos e importação de planilha. Um botão cria a conta piloto do prospect.
+- **Clientes e licenças:** plano, situação (teste, ativa, suspensa, cancelada), validade, limites (áreas, usuários,
+  laudos avulsos por mês) e valor mensal. Licença suspensa ou vencida bloqueia o login na hora; o limite atingido
+  aparece para o cliente com a mensagem para falar com a GeoLEM.
+- **Leads do site:** quem consultou o quê, com botão para levar ao CRM e exclusão a pedido do titular (LGPD).
+
+Planos sugeridos (`api/app/licencas.py`, limites editáveis empresa a empresa): Piloto (30 dias, 20 áreas,
+3 usuários), Essencial (100 áreas), Profissional (500 áreas, 10 usuários) e Corporativo (sem limites).
+Para dar acesso ao admin: `python -m app.contas superadmin seu@email.com.br` (a instalação já faz isso com a sua conta).
 
 ### Carteira e monitoramento
 - **Importar em lote** pela página Carteira: planilha CSV/Excel com o código SIGEF ou CAR (colunas `codigo`, `nome`,
@@ -214,7 +247,8 @@ Só vai o que está no git; o `.env`, o banco e os backups do servidor não são
 `db/init/01_schema.sql` são criadas automaticamente (o script só cria o que ainda não existe).
 
 **Tarefas agendadas** (`/etc/cron.d/geolem`): bases públicas atualizadas toda segunda às 3h, seguidas do
-monitoramento de todas as carteiras (log em `/var/log/geolem-bases.log`), e backup do banco todo dia às 2h.
+monitoramento de todas as carteiras e do boletim do DETER (log em `/var/log/geolem-bases.log`), e backup do banco
+todo dia às 2h.
 
 ### Backups
 Ficam em `/opt/geolem/backups`, com 14 dias guardados (cerca de 8 MB cada). Os laudos emitidos são o que não dá para
@@ -258,6 +292,7 @@ Para restaurar num banco vazio:
   antes e depois; territórios quilombolas e assentamentos; exportação GeoJSON para o EUDR
 - **Feito:** contas por empresa com auditoria; carteira com importação em lote, monitoramento semanal e alertas
 - **Feito:** alertas recentes do DETER Cerrado e integração com o MapBiomas Alerta
+- **Feito:** painel da carteira, observatório público com captura de leads, admin com CRM, clientes e licenças
 - **Próximos passos:** APP por hidrografia; gráfico de NDVI no laudo;
   integração com ERPs
 - **Fase 3 (produto):** login, empresas e carteiras de fornecedores, monitoramento contínuo com alertas, integração com ERPs do agro (Siagri, TOTVS, SAP), frontend em React

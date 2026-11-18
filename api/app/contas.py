@@ -23,6 +23,8 @@ from datetime import datetime, timedelta, timezone
 
 from psycopg.types.json import Jsonb
 
+from .licencas import motivo_bloqueio
+
 DURACAO_SESSAO = timedelta(hours=12)       # sem uso por 12 h, precisa entrar de novo
 DURACAO_MAXIMA = timedelta(days=7)         # mesmo em uso, renova o login uma vez por semana
 SENHA_MINIMA = 10
@@ -112,8 +114,9 @@ def _hash_token(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
 
 
-SQL_USUARIO = """SELECT u.id, u.empresa_id, u.nome, u.email, u.papel, u.ativo, u.trocar_senha,
-                        e.nome AS empresa_nome, e.ativa AS empresa_ativa
+SQL_USUARIO = """SELECT u.id, u.empresa_id, u.nome, u.email, u.papel, u.ativo, u.trocar_senha, u.superadmin,
+                        e.nome AS empresa_nome, e.ativa AS empresa_ativa, e.situacao, e.valido_ate, e.operadora,
+                        e.plano
                  FROM app.usuarios u JOIN app.empresas e ON e.id = u.empresa_id"""
 
 
@@ -134,6 +137,10 @@ def entrar(conn, email: str, senha: str, ip: str | None, agente: str | None) -> 
         auditar(conn, "login_falhou", None, alvo=email, ip=ip, empresa_id=linha["empresa_id"] if linha else None)
         raise ErroConta("E-mail ou senha incorretos.")
     limite_email.limpar(email)
+    bloqueio = motivo_bloqueio(linha)
+    if bloqueio:
+        auditar(conn, "login_bloqueado", None, alvo=email, ip=ip, empresa_id=linha["empresa_id"])
+        raise ErroConta(bloqueio)
     token = secrets.token_urlsafe(32)
     agora = datetime.now(timezone.utc)
     conn.execute(
@@ -230,11 +237,14 @@ def _cli() -> int:
     a.add_argument("--cnpj")
     a.add_argument("--admin-nome", required=True)
     a.add_argument("--admin-email", required=True)
+    a.add_argument("--operadora", action="store_true", help="a própria GeoLEM: sem limites, admin vira superadmin")
     b = sub.add_parser("novo-usuario", help="cria um usuário na empresa de outro usuário")
     b.add_argument("email_da_empresa", help="e-mail de alguém da mesma empresa")
     b.add_argument("nome")
     b.add_argument("email")
     b.add_argument("--admin", action="store_true")
+    s = sub.add_parser("superadmin", help="dá acesso ao admin da plataforma (CRM, clientes, licenças)")
+    s.add_argument("email")
     c = sub.add_parser("redefinir-senha", help="gera uma senha provisória nova")
     c.add_argument("email")
     sub.add_parser("listar", help="lista empresas e usuários")
@@ -245,6 +255,10 @@ def _cli() -> int:
             if args.cmd == "nova-empresa":
                 eid = criar_empresa(conn, args.nome, args.cnpj)
                 uid, senha = criar_usuario(conn, eid, args.admin_nome, args.admin_email, "admin")
+                if args.operadora:
+                    conn.execute("""UPDATE app.empresas SET operadora = true, situacao = 'ativa', plano = 'interno'
+                                    WHERE id = %s""", (eid,))
+                    conn.execute("UPDATE app.usuarios SET superadmin = true WHERE id = %s", (uid,))
                 auditar(conn, "empresa_criada", None, alvo=args.nome, empresa_id=eid, detalhes={"via": "linha de comando"})
                 print(f"Empresa criada (id {eid}). Administrador: {args.admin_email}")
                 print(f"Senha provisória: {senha}   (troca obrigatória no primeiro acesso)")
@@ -256,6 +270,12 @@ def _cli() -> int:
                 uid, senha = criar_usuario(conn, ref["empresa_id"], args.nome, args.email,
                                            "admin" if args.admin else "analista")
                 print(f"Usuário criado: {args.email}\nSenha provisória: {senha}")
+            elif args.cmd == "superadmin":
+                n = conn.execute("UPDATE app.usuarios SET superadmin = true WHERE lower(email) = %s",
+                                 (normalizar_email(args.email),)).rowcount
+                if not n:
+                    raise ErroConta("Usuário não encontrado.")
+                print(f"{args.email} agora é administrador da plataforma.")
             elif args.cmd == "redefinir-senha":
                 u = conn.execute("SELECT id FROM app.usuarios WHERE lower(email) = %s",
                                  (normalizar_email(args.email),)).fetchone()

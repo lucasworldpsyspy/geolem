@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Painel · GeoLEM</title>
+  <link rel="icon" href="/marca.svg">
+  <link rel="stylesheet" href="/estilo.css">
+  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
+  <style>
+    .grade-2 { display: grid; grid-template-columns: 1.4fr 1fr; gap: 16px; }
+    .grade-2b { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .caixa h2 { margin-bottom: 12px; }
+    #mapa { height: 430px; border-radius: 8px; overflow: hidden; }
+    .grafico { position: relative; height: 260px; }
+    .grafico.alto { height: 430px; }
+    .lista-barras { display: flex; flex-direction: column; gap: 10px; }
+    .lista-barras .linha { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; font-size: 13px; }
+    .lista-barras .linha small { color: var(--suave); }
+    .lista-barras .proporcao { grid-column: 1 / -1; height: 8px; }
+    .validade { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; }
+    .validade div { background: var(--painel-2); border-radius: 8px; padding: 10px; text-align: center; }
+    .validade b { display: block; font-size: 22px; font-variant-numeric: tabular-nums; }
+    .validade small { color: var(--suave); font-size: 12px; }
+    .validade .velho b { color: var(--warn); } .validade .muito-velho b { color: var(--bad); }
+    .legenda-mapa { display: flex; gap: 14px; font-size: 12.5px; color: var(--suave); margin-top: 8px; flex-wrap: wrap; }
+    .legenda-mapa span::before { content: ""; display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; background: var(--c); vertical-align: -1px; }
+    .maplibregl-popup-content { background: #fff; color: #1a1a1a; font: 13px/1.4 system-ui, sans-serif; border-radius: 8px; }
+    .maplibregl-popup-content a { color: #1d7a52; font-weight: 600; }
+    .vazio-painel { text-align: center; padding: 60px 20px; color: var(--suave); }
+    @media (max-width: 960px) { .grade-2, .grade-2b { grid-template-columns: 1fr; } .validade { grid-template-columns: repeat(3, 1fr); } }
+  </style>
+</head>
+<body>
+  <header class="barra" data-pagina="painel"></header>
+  <main class="pagina">
+    <div class="cabecalho">
+      <div>
+        <h1>Painel da carteira</h1>
+        <p id="subtitulo">Situação socioambiental dos seus fornecedores, atualizada a cada análise.</p>
+      </div>
+      <div class="botoes">
+        <a class="btn" href="/carteira.html">Ver carteira completa</a>
+        <a class="btn" href="/api/carteira/exportar.csv">⇩ Planilha</a>
+      </div>
+    </div>
+
+    <section class="indicadores" id="indicadores"></section>
+
+    <div id="conteudo">
+      <div class="grade-2">
+        <section class="caixa">
+          <h2>Mapa dos fornecedores</h2>
+          <div id="mapa" role="img" aria-label="Mapa com as áreas da carteira coloridas pela situação"></div>
+          <div class="legenda-mapa">
+            <span style="--c:var(--ok)">Conforme</span><span style="--c:var(--warn)">Atenção</span>
+            <span style="--c:var(--bad)">Não conforme</span><span style="--c:#8a9a90">Aguardando análise</span>
+          </div>
+        </section>
+        <section class="caixa">
+          <h2>Motivos das ocorrências</h2>
+          <div class="grafico alto"><canvas id="g-motivos" aria-label="Áreas por motivo de ocorrência"></canvas></div>
+        </section>
+      </div>
+
+      <section class="caixa" style="margin-top:16px">
+        <h2>Evolução semanal da carteira</h2>
+        <div class="grafico"><canvas id="g-evolucao" aria-label="Áreas por situação em cada semana"></canvas></div>
+      </section>
+
+      <div class="grade-2b" style="margin-top:16px">
+        <section class="caixa">
+          <h2>Por município</h2>
+          <div class="lista-barras" id="municipios"></div>
+        </section>
+        <section class="caixa">
+          <h2>Fornecedores com mais ocorrências</h2>
+          <div class="lista-barras" id="fornecedores"></div>
+        </section>
+      </div>
+
+      <section class="caixa" style="margin-top:16px">
+        <h2>Idade da última análise</h2>
+        <p class="aviso" style="margin:-4px 0 12px">O monitoramento semanal mantém as análises em dia. Antes de uma compra, confira se o laudo do fornecedor é recente.</p>
+        <div class="validade" id="validade"></div>
+      </section>
+    </div>
+  </main>
+  <p class="rodape"><a href="/termos.html">Termos de uso</a> · <a href="/privacidade.html">Privacidade</a></p>
+
+<script src="/conta.js"></script>
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script>
+  const $ = (s) => document.querySelector(s);
+  const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const fmtN = (v, c = 0) => Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: c, maximumFractionDigits: c });
+  const COR = { ok: '#3fb87f', warn: '#f5a524', bad: '#e5484d', fila: '#8a9a90' };
+  const ROTULO = { ok: 'Conforme', warn: 'Atenção', bad: 'Não conforme', fila: 'Aguardando análise' };
+  Chart.defaults.color = '#97a89d';
+  Chart.defaults.borderColor = '#2a3830';
+  Chart.defaults.font.family = 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
+
+  async function api(url) {
+    const r = await fetch(url);
+    if (r.status === 401) { location.href = '/entrar.html?volta=/painel.html'; throw new Error('sessão expirada'); }
+    if (!r.ok) throw new Error(`Erro ${r.status}`);
+    return r.json();
+  }
+
+  function indicadores(r) {
+    const total = r.areas || 0;
+    const pct = (n) => total ? ` · ${fmtN(100 * n / total)}%` : '';
+    $('#indicadores').innerHTML = [
+      ['', fmtN(total), `áreas · ${fmtN(r.area_ha)} ha`],
+      ['ok', fmtN(r.ok), 'Conformes' + pct(r.ok)],
+      ['warn', fmtN(r.warn), 'Atenção' + pct(r.warn)],
+      ['bad', fmtN(r.bad), `Não conformes${pct(r.bad)}`],
+      ['bad', fmtN(r.area_bad_ha), 'ha em áreas não conformes'],
+      ['', fmtN(r.alertas_nao_lidos), 'alertas não lidos'],
+    ].map(([c, n, t]) => `<div class="indicador ${c}"><div class="n">${n}</div><div class="t">${t}</div></div>`).join('');
+  }
+
+  function barras(alvo, linhas, nome, extra) {
+    const max = Math.max(1, ...linhas.map((l) => l.areas));
+    $(alvo).innerHTML = linhas.map((l) => {
+      const fila = l.areas - (l.ok ?? 0) - l.warn - l.bad;
+      const partes = [['bad', l.bad], ['warn', l.warn], ['ok', l.ok ?? 0], ['fila', l.ok === undefined ? Math.max(0, l.areas - l.bad - l.warn) : fila]];
+      return `<div class="linha"><span><b>${esc(l[nome])}</b></span><small>${extra(l)}</small>
+        <div class="proporcao" style="width:${100 * l.areas / max}%">${partes.map(([c, n]) => n > 0 ? `<span class="${c}" style="width:${100 * n / l.areas}%"></span>` : '').join('')}</div></div>`;
+    }).join('') || '<p class="aviso">Sem dados ainda.</p>';
+  }
+
+  function mapa(geo) {
+    const m = new maplibregl.Map({
+      container: 'mapa', attributionControl: { compact: true },
+      style: { version: 8, sources: { sat: { type: 'raster', tileSize: 256, maxzoom: 19,
+        tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],
+        attribution: 'Imagens © Esri, Maxar, Earthstar Geographics' } },
+        layers: [{ id: 'sat', type: 'raster', source: 'sat', paint: { 'raster-saturation': -0.3, 'raster-brightness-max': 0.8 } }] },
+      center: [-45.8, -12.1], zoom: 7,
+    });
+    m.addControl(new maplibregl.NavigationControl({ showCompass: false }));    m.on('load', () => {
+      m.addSource('areas', { type: 'geojson', data: geo });
+      const cor = ['match', ['get', 'status'], 'ok', COR.ok, 'warn', COR.warn, 'bad', COR.bad, COR.fila];
+      m.addLayer({ id: 'areas-f', type: 'fill', source: 'areas', paint: { 'fill-color': cor, 'fill-opacity': 0.45 } });
+      m.addLayer({ id: 'areas-l', type: 'line', source: 'areas', paint: { 'line-color': cor, 'line-width': 2 } });
+      if (geo.features.length) {
+        const b = new maplibregl.LngLatBounds();
+        geo.features.forEach((f) => (f.geometry.type === 'Polygon' ? [f.geometry.coordinates] : f.geometry.coordinates)
+          .forEach((p) => p[0].forEach((c) => b.extend(c))));
+        m.fitBounds(b, { padding: 30, maxZoom: 13, duration: 0 });
+      }
+      m.on('click', 'areas-f', (e) => {
+        const p = e.features[0].properties;
+        new maplibregl.Popup().setLngLat(e.lngLat).setHTML(
+          `<strong>${esc(p.nome)}</strong><br>${esc(p.fornecedor && p.fornecedor !== 'null' ? p.fornecedor : '')}<br>` +
+          `${ROTULO[p.status]} · ${fmtN(p.area_ha, 1)} ha` +
+          (p.protocolo && p.protocolo !== 'null' ? `<br><a href="/api/analises/${encodeURIComponent(p.protocolo)}/laudo.pdf" target="_blank" rel="noopener">Abrir laudo</a>` : '')).addTo(m);
+      });
+      m.on('mouseenter', 'areas-f', () => { m.getCanvas().style.cursor = 'pointer'; });
+      m.on('mouseleave', 'areas-f', () => { m.getCanvas().style.cursor = ''; });
+    });
+  }
+
+  function graficos(d) {
+    const motivos = d.motivos;
+    new Chart($('#g-motivos'), {
+      type: 'bar',
+      data: { labels: motivos.map((m) => m.titulo), datasets: [{ data: motivos.map((m) => m.areas),
+        backgroundColor: motivos.map((m) => COR[m.status]), borderRadius: 4 }] },
+      options: { indexAxis: 'y', maintainAspectRatio: false, plugins: { legend: { display: false },
+        tooltip: { callbacks: { label: (c) => `${c.raw} área(s) · ${fmtN(motivos[c.dataIndex].ha)} ha` } } },
+        scales: { x: { beginAtZero: true, ticks: { precision: 0 }, title: { display: true, text: 'áreas' } },
+                  y: { ticks: { autoSkip: false, callback(v) { const t = this.getLabelForValue(v); return t.length > 34 ? t.slice(0, 33) + '…' : t; } } } } },
+    });
+    const ev = d.evolucao;
+    const semana = (s) => s.split('-').reverse().slice(0, 2).join('/');
+    new Chart($('#g-evolucao'), {
+      type: 'bar',
+      data: { labels: ev.map((e) => semana(e.semana)), datasets: ['bad', 'warn', 'ok'].map((s) => ({
+        label: ROTULO[s], data: ev.map((e) => e[s]), backgroundColor: COR[s], borderRadius: 3, stack: 'a' })) },
+      options: { maintainAspectRatio: false, plugins: { legend: { position: 'bottom' },
+        tooltip: { mode: 'index' } },
+        scales: { x: { stacked: true, title: { display: true, text: 'semana (início)' } },
+                  y: { stacked: true, beginAtZero: true, ticks: { precision: 0 }, title: { display: true, text: 'áreas' } } } },
+    });
+  }
+
+  (async function () {
+    try {
+      const [d, geo] = await Promise.all([api('/api/carteira/painel'), api('/api/carteira/mapa.geojson')]);
+      indicadores(d.resumo);
+      if (!d.resumo.areas) {
+        $('#conteudo').innerHTML = '<div class="caixa vazio-painel"><h2>Sua carteira está vazia</h2><p>Importe a lista de fornecedores na <a href="/carteira.html">Carteira</a> para ver o painel.</p></div>';
+        return;
+      }
+      if (d.resumo.ultima_analise) $('#subtitulo').textContent = `Última análise: ${new Date(d.resumo.ultima_analise).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}` + (d.resumo.na_fila ? ` · ${d.resumo.na_fila} área(s) na fila` : '');
+      mapa(geo);
+      graficos(d);
+      barras('#municipios', d.municipios, 'municipio', (l) => `${l.areas} área(s) · ${fmtN(l.ha)} ha`);
+      barras('#fornecedores', d.fornecedores, 'fornecedor', (l) => `${l.bad} não conforme(s) de ${l.areas} · ${fmtN(l.ha_bad)} ha`);
+      const v = d.validade;
+      $('#validade').innerHTML = [['', v.ate_7, 'até 7 dias'], ['', v.ate_30, '8 a 30 dias'], ['velho', v.ate_90, '31 a 90 dias'],
+        ['muito-velho', v.mais_90, 'mais de 90 dias'], ['', v.nunca, 'sem análise']]
+        .map(([c, n, t]) => `<div class="${c}"><b>${fmtN(n)}</b><small>${t}</small></div>`).join('');
+    } catch (e) { $('#conteudo').innerHTML = `<div class="caixa vazio-painel">${esc(e.message)}</div>`; }
+  })();
+</script>
+</body>
+</html>

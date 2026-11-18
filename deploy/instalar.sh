@@ -72,7 +72,7 @@ if $COMPOSE exec -T db sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -tAc "s
   echo "    Já existem usuários; mantidos."
 else
   echo
-  $COMPOSE exec -T api python -m app.contas nova-empresa "GeoLEM" --admin-nome "$ADMIN_NOME" --admin-email "$ADMIN_EMAIL"
+  $COMPOSE exec -T api python -m app.contas nova-empresa "GeoLEM" --operadora --admin-nome "$ADMIN_NOME" --admin-email "$ADMIN_EMAIL"
   echo "    Guarde a senha provisória acima: você vai criar a sua senha no primeiro acesso."
   echo
 fi
@@ -81,7 +81,7 @@ echo "==> 7/7 Tarefas agendadas (bases e monitoramento da carteira toda segunda 
 chmod +x deploy/*.sh
 cat > /etc/cron.d/geolem <<EOF
 SHELL=/bin/bash
-0 3 * * 1 root cd $PASTA && $COMPOSE exec -T api python -m ingest todas >> /var/log/geolem-bases.log 2>&1; $COMPOSE exec -T api python -m app.worker monitorar >> /var/log/geolem-bases.log 2>&1
+0 3 * * 1 root cd $PASTA && $COMPOSE exec -T api python -m ingest todas >> /var/log/geolem-bases.log 2>&1; $COMPOSE exec -T api python -m app.worker monitorar >> /var/log/geolem-bases.log 2>&1; $COMPOSE exec -T api python -m app.worker boletim >> /var/log/geolem-bases.log 2>&1
 0 2 * * * root $PASTA/deploy/backup.sh >> /var/log/geolem-backup.log 2>&1
 EOF
 

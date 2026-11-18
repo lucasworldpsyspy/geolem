@@ -5,7 +5,7 @@ na área e, se a situação piorar em relação à análise anterior, cria um al
 """
 import json
 
-from . import regras
+from . import licencas, regras
 from .analise import ErroAnalise, analisar
 from .config import AREA_MAXIMA_HA
 from .imoveis import carregar_imovel, imovel_por_codigo
@@ -33,6 +33,10 @@ def adicionar_area(conn, empresa_id: int, usuario_id: int | None, *, nome: str |
             reserva_legal_ha = im["reserva_legal_ha"]
     if not geometria:
         raise ErroCarteira("Informe a geometria da área ou o imóvel.")
+    try:
+        licencas.exigir(conn, empresa_id, "areas")
+    except licencas.ErroLicenca as e:
+        raise ErroCarteira(str(e)) from e
     if geometria.get("type") == "Feature":
         geometria = geometria.get("geometry") or {}
     if geometria.get("type") not in ("Polygon", "MultiPolygon"):

@@ -14,7 +14,11 @@ from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
 
 from . import carteira as cart
-from . import contas, tiles
+from . import contas, licencas, painel, tiles
+from .dependencias import admin, superadmin, usuario
+from .dependencias import ip as _ip
+from .rotas_admin import rotas as rotas_admin
+from .rotas_publico import rotas as rotas_publico
 from .analise import ErroAnalise, analisar
 from .arquivos import ErroArquivo, ler_feicoes, ler_geometria
 from .config import COOKIE_SEGURO, REGIAO_BBOX, TAMANHO_MAX_ARQUIVO, URL_PUBLICA, WEB_DIR
@@ -36,18 +40,23 @@ app = FastAPI(title="GeoLEM API", version="0.3.0", lifespan=ciclo_de_vida,
               description="Compliance socioambiental de áreas rurais no oeste da Bahia.")
 
 COOKIE = "geolem_sessao"
+app.include_router(rotas_publico)
+app.include_router(rotas_admin)
 
 # ---------- Acesso ----------
-# Sem login: a tela de entrada, os termos, a saúde do serviço e a verificação pública de laudos (QR code).
-PUBLICO_EXATO = {"/entrar.html", "/termos.html", "/privacidade.html", "/api/auth/login", "/api/saude",
-                 "/favicon.ico", "/marca.svg", "/estilo.css"}
+# Sem login: a tela de entrada, os termos, o observatório (e suas rotas), a saúde do serviço e a verificação
+# pública de laudos (QR code).
+PUBLICO_EXATO = {"/entrar.html", "/termos.html", "/privacidade.html", "/observatorio.html", "/api/auth/login",
+                 "/api/saude", "/favicon.ico", "/marca.svg", "/estilo.css"}
+PUBLICO_PREFIXO = ("/api/publico/",)
 PUBLICO_LEITURA = re.compile(r"^/(verificar/[^/]+|api/analises/GL-[^/]+(/laudo\.pdf|/imagens/(antes|depois)\.png)?)$")
 TROCA_DE_SENHA = {"/api/auth/eu", "/api/auth/senha", "/api/auth/sair"}
 
 
 def _publico(request: Request) -> bool:
     p = request.url.path
-    return p in PUBLICO_EXATO or (request.method in ("GET", "HEAD") and bool(PUBLICO_LEITURA.match(p)))
+    return (p in PUBLICO_EXATO or p.startswith(PUBLICO_PREFIXO)
+            or (request.method in ("GET", "HEAD") and bool(PUBLICO_LEITURA.match(p))))
 
 
 def _origem_confiavel(request: Request) -> bool:
@@ -81,34 +90,25 @@ async def proteger(request: Request, chamar):
             if api:
                 return JSONResponse({"detail": "Troque a senha provisória antes de continuar."}, status_code=403)
             return RedirectResponse("/entrar.html?trocar=1", status_code=303)
+        bloqueio = licencas.motivo_bloqueio(usuario)
+        if bloqueio and request.url.path not in TROCA_DE_SENHA:
+            if api:
+                return JSONResponse({"detail": bloqueio}, status_code=403)
+            return RedirectResponse("/entrar.html?bloqueado=1", status_code=303)
+        if request.url.path == "/admin.html" and not usuario["superadmin"]:
+            return RedirectResponse("/", status_code=303)
         request.state.usuario = usuario
         resposta = await chamar(request)
     resposta.headers.setdefault("X-Frame-Options", "DENY")
     return resposta
 
 
-def usuario(request: Request) -> dict:
-    u = request.state.usuario
-    if not u:
-        raise HTTPException(401, "Faça login para continuar.")
-    return u
-
-
-def admin(u: dict = Depends(usuario)) -> dict:
-    if u["papel"] != "admin":
-        raise HTTPException(403, "Só administradores da empresa podem fazer isso.")
-    return u
-
-
-def _ip(request: Request) -> str | None:
-    # Atrás do Caddy, o IP real vem no X-Forwarded-For
-    return (request.headers.get("x-forwarded-for") or "").split(",")[0].strip() or (
-        request.client.host if request.client else None)
-
-
 def _publico_usuario(u: dict) -> dict:
     return {"id": u["id"], "nome": u["nome"], "email": u["email"], "papel": u["papel"],
-            "trocar_senha": u["trocar_senha"], "empresa": {"id": u["empresa_id"], "nome": u["empresa_nome"]}}
+            "trocar_senha": u["trocar_senha"], "superadmin": bool(u.get("superadmin")),
+            "empresa": {"id": u["empresa_id"], "nome": u["empresa_nome"], "plano": u.get("plano"),
+                        "situacao": u.get("situacao"),
+                        "valido_ate": u["valido_ate"].isoformat() if u.get("valido_ate") else None}}
 
 
 # ---------- Autenticação ----------
@@ -184,8 +184,9 @@ class PedidoUsuario(BaseModel):
 def novo_usuario(p: PedidoUsuario, request: Request, u: dict = Depends(admin)):
     with pool.connection() as conn:
         try:
+            licencas.exigir(conn, u["empresa_id"], "usuarios")
             uid, senha = contas.criar_usuario(conn, u["empresa_id"], p.nome, p.email, p.papel)
-        except contas.ErroConta as e:
+        except (contas.ErroConta, licencas.ErroLicenca) as e:
             raise HTTPException(422, str(e)) from e
         contas.auditar(conn, "usuario_criado", u, alvo=p.email, detalhes={"papel": p.papel}, ip=_ip(request))
     return {"id": uid, "senha_provisoria": senha}
@@ -342,6 +343,10 @@ def criar_analise(p: PedidoAnalise, request: Request, u: dict = Depends(usuario)
         if geometria.get("type") not in ("Polygon", "MultiPolygon"):
             raise HTTPException(422, "A geometria precisa ser Polygon ou MultiPolygon.")
         try:
+            licencas.exigir(conn, u["empresa_id"], "laudos_mes")
+        except licencas.ErroLicenca as e:
+            raise HTTPException(403, str(e)) from e
+        try:
             r = analisar(conn, geometria, nome=p.nome, imovel=imovel, reserva_legal_ha=p.reserva_legal_ha,
                          empresa_id=u["empresa_id"], usuario_id=u["id"])
         except ErroAnalise as e:
@@ -431,6 +436,20 @@ def pagina_verificacao(protocolo: str):
 def carteira(u: dict = Depends(usuario)):
     with pool.connection() as conn:
         return {"resumo": cart.resumo_carteira(conn, u["empresa_id"]), "areas": cart.listar_areas(conn, u["empresa_id"])}
+
+
+@app.get("/api/carteira/painel")
+def painel_carteira(u: dict = Depends(usuario)):
+    """Dashboard: evolução semanal, motivos, municípios, fornecedores e validade dos laudos."""
+    with pool.connection() as conn:
+        return {**painel.painel(conn, u["empresa_id"]), "resumo": cart.resumo_carteira(conn, u["empresa_id"]),
+                "uso": licencas.uso(conn, u["empresa_id"])}
+
+
+@app.get("/api/carteira/mapa.geojson")
+def mapa_carteira(u: dict = Depends(usuario)):
+    with pool.connection() as conn:
+        return painel.mapa(conn, u["empresa_id"])
 
 
 class PedidoArea(BaseModel):

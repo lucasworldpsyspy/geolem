@@ -2,6 +2,7 @@
 
     python -m app.worker             # roda continuamente (serviço "worker" do docker compose)
     python -m app.worker monitorar   # põe todas as carteiras na fila (cron, depois da carga semanal das bases)
+    python -m app.worker boletim     # envia o boletim semanal do DETER aos assinantes do observatório
 """
 import signal
 import sys
@@ -77,6 +78,10 @@ def executar() -> None:
 
 
 def main() -> int:
+    if len(sys.argv) > 1 and sys.argv[1] == "boletim":
+        with psycopg.connect(DATABASE_URL, row_factory=dict_row) as conn:
+            avisos.enviar_boletins(conn)
+        return 0
     if len(sys.argv) > 1 and sys.argv[1] == "monitorar":
         with psycopg.connect(DATABASE_URL, row_factory=dict_row) as conn:
             n = enfileirar_monitoramento(conn)

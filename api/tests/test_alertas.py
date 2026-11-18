@@ -20,8 +20,9 @@ def test_mapeia_deter():
     d = fontes.m_deter({"gid": "72249_curr", "classname": "DESMATAMENTO_CR", "view_date": "2026-11-06",
                         "created_date": "2026-11-11", "publish_month": "2026-11-01", "areatotalkm": 0.5,
                         "satellite": "AMAZONIA-1", "sensor": "WFI"})
-    assert d == {"id_origem": "72249_curr", "data_deteccao": date(2026, 11, 6), "data_publicacao": date(2026, 11, 1),
-                 "area_ha": 50.0, "classe": "DESMATAMENTO_CR", "situacao": None, "satelite": "AMAZONIA-1 WFI"}
+    assert d == {"id_origem": "72249_curr", "data_deteccao": date(2026, 11, 6), "data_publicacao": date(2026, 11, 11),
+                 "area_ha": 50.0, "classe": "DESMATAMENTO_CR", "situacao": None, "satelite": "AMAZONIA-1 WFI",
+                 "municipio": None, "uf": None}
     assert set(d) == set(fontes.COLUNAS["geo.alertas_desmatamento"])
 
 

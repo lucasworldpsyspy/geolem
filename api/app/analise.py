@@ -65,7 +65,7 @@ def _data_br(d) -> str:
 
 def analisar(conn, geometria: dict, nome: str | None = None, imovel: dict | None = None,
              reserva_legal_ha: float | None = None, empresa_id: int | None = None, usuario_id: int | None = None,
-             area_id: int | None = None) -> dict:
+             area_id: int | None = None, gravar: bool = True, com_imagens: bool = True) -> dict:
     g = json.dumps(geometria)
     with conn.cursor() as cur:
         try:
@@ -273,7 +273,7 @@ def analisar(conn, geometria: dict, nome: str | None = None, imovel: dict | None
         }
         # Imagens de satélite: os metadados (data, cenas, SHA-256 do PNG) entram no código de integridade
         pngs: dict[str, bytes] = {}
-        if IMAGENS_SATELITE:
+        if IMAGENS_SATELITE and com_imagens:
             resultado["imagens"] = []
             for meta, png in imagens.imagens_antes_depois((area["x0"], area["y0"], area["x1"], area["y1"]),
                                                           agora.astimezone(FUSO_BAHIA).date()):
@@ -283,6 +283,9 @@ def analisar(conn, geometria: dict, nome: str | None = None, imovel: dict | None
         # Gravado junto e impresso no PDF: qualquer alteração posterior no conteúdo muda o código
         resultado["integridade"] = codigo_integridade(resultado)
 
+        if not gravar:  # consulta pública: resultado na hora, sem protocolo verificável
+            conn.rollback()
+            return resultado
         cur.execute(
             """INSERT INTO geo.analises (protocolo, nome_area, imovel_id, area_ha, resultado, detalhes, geom,
                                          empresa_id, usuario_id, area_id)

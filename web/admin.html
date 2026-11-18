@@ -1,0 +1,471 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Admin · GeoLEM</title>
+  <link rel="icon" href="/marca.svg">
+  <link rel="stylesheet" href="/estilo.css">
+  <style>
+    .abas { display: flex; gap: 6px; flex-wrap: wrap; border-bottom: 1px solid var(--borda); padding-bottom: 10px; }
+    .abas button[aria-selected="true"] { background: var(--marca); border-color: var(--marca); color: var(--marca-tinta); font-weight: 600; }
+    .grafico { position: relative; height: 240px; }
+    .grade-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .funil { display: flex; flex-direction: column; gap: 8px; }
+    .funil .linha { display: grid; grid-template-columns: 110px 1fr 120px; gap: 10px; align-items: center; font-size: 13px; }
+    .funil .barra-f { height: 18px; background: var(--marca); border-radius: 4px; min-width: 2px; }
+    .quadro { display: grid; grid-template-columns: repeat(7, minmax(190px, 1fr)); gap: 10px; overflow-x: auto; padding-bottom: 8px; }
+    .coluna { background: var(--painel); border: 1px solid var(--borda); border-radius: 10px; padding: 10px; min-height: 120px;
+      display: flex; flex-direction: column; gap: 8px; }
+    .coluna h3 { margin: 0; font-size: 12px; text-transform: uppercase; letter-spacing: .6px; color: var(--suave); display: flex; justify-content: space-between; }
+    .card { background: var(--painel-2); border: 1px solid var(--borda); border-radius: 8px; padding: 9px; cursor: pointer; font-size: 12.5px; text-align: left; color: var(--texto); }
+    .card:hover { border-color: var(--marca); }
+    .card b { display: block; font-size: 13px; }
+    .card small { display: block; color: var(--suave); }
+    .card .atrasado { color: #ff9a9c; }
+    .grade-form { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .grade-form .largo { grid-column: 1 / -1; }
+    textarea { color: var(--texto); background: var(--bg); border: 1px solid var(--borda); border-radius: 8px; padding: 9px 11px; width: 100%; font: inherit; min-height: 70px; }
+    input[type=number], input[type=date] { color: var(--texto); background: var(--bg); border: 1px solid var(--borda); border-radius: 8px; padding: 9px 11px; width: 100%; }
+    dialog.grande { max-width: 820px; }
+    .historico { max-height: 220px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; font-size: 12.5px; }
+    .historico div { border-left: 2px solid var(--borda); padding-left: 8px; }
+    .historico small { color: var(--suave); }
+    .uso { font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .uso.cheio { color: #ff9a9c; font-weight: 700; }
+    .situacao-teste { background: var(--info); color: #04182a; } .situacao-ativa { background: var(--ok); color: #04210f; }
+    .situacao-suspensa, .situacao-cancelada { background: var(--bad); color: #fff; }
+    @media (max-width: 900px) { .grade-2, .grade-form { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <header class="barra" data-pagina="admin"></header>
+  <main class="pagina">
+    <div class="cabecalho">
+      <div><h1>Admin GeoLEM</h1><p>Gestão do negócio: clientes, licenças, possíveis clientes e leads do site.</p></div>
+      <a class="btn" href="/observatorio.html" target="_blank" rel="noopener">Abrir observatório público ↗</a>
+    </div>
+    <div class="abas" role="tablist">
+      <button class="btn" role="tab" data-aba="visao" aria-selected="true" type="button">Visão geral</button>
+      <button class="btn" role="tab" data-aba="crm" aria-selected="false" type="button">Possíveis clientes (CRM)</button>
+      <button class="btn" role="tab" data-aba="clientes" aria-selected="false" type="button">Clientes e licenças</button>
+      <button class="btn" role="tab" data-aba="leads" aria-selected="false" type="button">Leads do site</button>
+    </div>
+
+    <!-- Visão geral -->
+    <section data-painel="visao">
+      <div class="indicadores" id="ind"></div>
+      <div class="grade-2" style="margin-top:16px">
+        <div class="caixa"><h2>Funil de vendas</h2><div class="funil" id="funil"></div></div>
+        <div class="caixa"><h2>Laudos emitidos por mês (todas as empresas)</h2><div class="grafico"><canvas id="g-laudos"></canvas></div></div>
+      </div>
+      <div class="caixa" style="margin-top:16px"><h2>Leads do site por semana</h2><div class="grafico"><canvas id="g-leads"></canvas></div></div>
+    </section>
+
+    <!-- CRM -->
+    <section data-painel="crm" hidden>
+      <div class="cabecalho" style="margin-bottom:12px">
+        <div class="botoes">
+          <input id="busca-crm" type="search" placeholder="Buscar empresa, município ou contato" style="max-width:300px">
+          <select id="filtro-tipo" style="width:auto"><option value="">Todos os tipos</option></select>
+        </div>
+        <div class="botoes">
+          <button class="btn btn-primario" id="btn-novo-prospect" type="button">+ Possível cliente</button>
+          <button class="btn" id="btn-importar-prospects" type="button">⇪ Importar planilha</button>
+          <a class="btn" href="/api/admin/prospects/exportar.csv">⇩ Exportar</a>
+          <input id="arq-prospects" type="file" accept=".csv,.xlsx" hidden>
+        </div>
+      </div>
+      <p class="aviso" style="margin-bottom:10px">Planilha: colunas <code>nome</code> (obrigatória), <code>cnpj</code>, <code>tipo</code>, <code>municipio</code>, <code>uf</code>,
+        <code>contato</code>, <code>cargo</code>, <code>email</code>, <code>telefone</code>, <code>valor_estimado</code>, <code>notas</code>. Quem já existe (mesmo CNPJ ou nome) é ignorado.</p>
+      <div class="quadro" id="quadro"></div>
+    </section>
+
+    <!-- Clientes -->
+    <section data-painel="clientes" hidden>
+      <div class="cabecalho" style="margin-bottom:12px">
+        <p class="aviso">Plano, situação, validade e limites de cada empresa. Empresa suspensa ou com licença vencida não consegue entrar.</p>
+        <button class="btn btn-primario" id="btn-nova-empresa" type="button">+ Nova empresa cliente</button>
+      </div>
+      <div class="tabela-wrap"><table>
+        <thead><tr><th>Empresa</th><th>Plano</th><th>Situação</th><th>Validade</th><th>Áreas</th><th>Usuários</th><th>Laudos avulsos (mês)</th><th class="num">R$/mês</th><th>Último acesso</th><th></th></tr></thead>
+        <tbody id="empresas"></tbody>
+      </table></div>
+    </section>
+
+    <!-- Leads -->
+    <section data-painel="leads" hidden>
+      <p class="aviso" style="margin-bottom:10px">Contatos que chegaram pelo observatório público, com o consentimento registrado. Excluir apaga todos os registros daquele e-mail (pedido do titular, LGPD).</p>
+      <div class="tabela-wrap"><table>
+        <thead><tr><th>Quando</th><th>Contato</th><th>Empresa / perfil</th><th>Interesse</th><th>Detalhe</th><th>CRM</th><th></th></tr></thead>
+        <tbody id="leads"></tbody>
+      </table></div>
+    </section>
+  </main>
+
+  <!-- Prospect -->
+  <dialog id="dlg-prospect" class="grande">
+    <form id="form-prospect" novalidate>
+      <h3 id="titulo-prospect">Possível cliente</h3>
+      <div class="grade-form">
+        <label class="campo largo">Empresa <input name="nome" type="text" required maxlength="160"></label>
+        <label class="campo">CNPJ <input name="cnpj" type="text" maxlength="20"></label>
+        <label class="campo">Tipo <select name="tipo" id="sel-tipo"></select></label>
+        <label class="campo">Município <input name="municipio" type="text" maxlength="100"></label>
+        <label class="campo">UF <input name="uf" type="text" maxlength="2"></label>
+        <label class="campo">Contato <input name="contato_nome" type="text" maxlength="120"></label>
+        <label class="campo">Cargo <input name="contato_cargo" type="text" maxlength="120"></label>
+        <label class="campo">E-mail <input name="email" type="email" maxlength="200"></label>
+        <label class="campo">Telefone / WhatsApp <input name="telefone" type="text" maxlength="40"></label>
+        <label class="campo">Etapa <select name="etapa" id="sel-etapa"></select></label>
+        <label class="campo">Valor estimado (R$/mês) <input name="valor_estimado" type="number" min="0" step="1"></label>
+        <label class="campo">Próximo passo <input name="proximo_passo" type="text" maxlength="300"></label>
+        <label class="campo">Data do próximo passo <input name="proximo_em" type="date"></label>
+        <label class="campo largo" id="campo-perda">Motivo da perda <input name="motivo_perda" type="text" maxlength="300"></label>
+        <label class="campo largo">Notas <textarea name="notas" maxlength="4000"></textarea></label>
+      </div>
+      <div id="bloco-historico" hidden>
+        <h2 style="margin:6px 0 8px">Histórico</h2>
+        <div class="botoes" style="margin-bottom:8px">
+          <select id="tipo-interacao" style="width:auto"><option value="nota">Nota</option><option value="ligacao">Ligação</option>
+            <option value="whatsapp">WhatsApp</option><option value="email">E-mail</option><option value="reuniao">Reunião</option></select>
+          <input id="texto-interacao" type="text" placeholder="O que aconteceu?" maxlength="4000" style="flex:1;min-width:200px">
+          <button class="btn" id="btn-interacao" type="button">Registrar</button>
+        </div>
+        <div class="historico" id="historico"></div>
+      </div>
+      <p class="erro" id="erro-prospect" hidden></p>
+      <div class="botoes" style="justify-content:space-between">
+        <div class="botoes">
+          <button class="btn btn-perigo" id="btn-excluir-prospect" type="button" hidden>Excluir</button>
+          <button class="btn" id="btn-criar-conta" type="button" hidden>Criar conta (piloto)</button>
+        </div>
+        <div class="botoes">
+          <button class="btn" type="button" data-fechar>Fechar</button>
+          <button class="btn btn-primario" type="submit">Salvar</button>
+        </div>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Nova empresa -->
+  <dialog id="dlg-empresa">
+    <form id="form-empresa" novalidate>
+      <h3>Nova empresa cliente</h3>
+      <label class="campo">Empresa <input name="nome" type="text" required maxlength="160"></label>
+      <label class="campo">CNPJ <input name="cnpj" type="text" maxlength="20"></label>
+      <label class="campo">Plano <select name="plano" id="sel-plano-nova"></select></label>
+      <div class="grade-form">
+        <label class="campo">Administrador: nome <input name="admin_nome" type="text" required maxlength="120"></label>
+        <label class="campo">Administrador: e-mail <input name="admin_email" type="email" required maxlength="200"></label>
+      </div>
+      <input type="hidden" name="prospect_id">
+      <p class="erro" id="erro-empresa" hidden></p>
+      <div class="botoes" style="justify-content:flex-end"><button class="btn" type="button" data-fechar>Cancelar</button>
+        <button class="btn btn-primario" type="submit">Criar empresa</button></div>
+    </form>
+  </dialog>
+
+  <!-- Licença -->
+  <dialog id="dlg-licenca" class="grande">
+    <form id="form-licenca" novalidate>
+      <h3 id="titulo-licenca">Licença</h3>
+      <div class="grade-form">
+        <label class="campo">Empresa <input name="nome" type="text" maxlength="160"></label>
+        <label class="campo">CNPJ <input name="cnpj" type="text" maxlength="20"></label>
+        <label class="campo">Plano <select name="plano" id="sel-plano"></select></label>
+        <label class="campo">Situação <select name="situacao" id="sel-situacao"></select></label>
+        <label class="campo">Válida até (vazio = sem vencimento) <input name="valido_ate" type="date"></label>
+        <label class="campo">Valor mensal (R$) <input name="valor_mensal" type="number" min="0" step="0.01"></label>
+        <label class="campo">Limite de áreas (vazio = sem limite) <input name="limite_areas" type="number" min="0"></label>
+        <label class="campo">Limite de usuários <input name="limite_usuarios" type="number" min="0"></label>
+        <label class="campo">Limite de laudos avulsos/mês <input name="limite_laudos_mes" type="number" min="0"></label>
+        <label class="campo">Município <input name="municipio" type="text" maxlength="100"></label>
+        <label class="campo">Responsável <input name="responsavel" type="text" maxlength="120"></label>
+        <label class="campo">E-mail de contato <input name="email_contato" type="email" maxlength="200"></label>
+        <label class="campo">Telefone <input name="telefone" type="text" maxlength="40"></label>
+        <label class="campo largo">Observações <textarea name="observacoes" maxlength="2000"></textarea></label>
+      </div>
+      <p class="aviso">Ao trocar o plano, os limites padrão dele são aplicados (você pode ajustar depois). Suspender encerra as sessões abertas da empresa.</p>
+      <h2 style="margin:10px 0 6px">Usuários</h2>
+      <div class="tabela-wrap"><table><tbody id="usuarios-empresa"></tbody></table></div>
+      <p class="erro" id="erro-licenca" hidden></p>
+      <div class="botoes" style="justify-content:flex-end"><button class="btn" type="button" data-fechar>Fechar</button>
+        <button class="btn btn-primario" type="submit">Salvar licença</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="dlg-senha">
+    <h3>Senha provisória</h3>
+    <p id="senha-para" class="aviso"></p>
+    <p class="segredo" id="senha-valor"></p>
+    <p class="aviso">Envie para o cliente por um canal seguro. Ela aparece só agora; no primeiro acesso, ele cria a própria senha.
+      Endereço de acesso: <b id="url-acesso"></b></p>
+    <div class="botoes" style="justify-content:flex-end;margin-top:12px">
+      <button class="btn" type="button" id="btn-copiar">Copiar</button><button class="btn btn-primario" type="button" data-fechar>Fechar</button>
+    </div>
+  </dialog>
+
+<script src="/conta.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script>
+  const $ = (s) => document.querySelector(s);
+  const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const fmtN = (v, c = 0) => Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: c, maximumFractionDigits: c });
+  const reais = (v) => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 });
+  const dataBR = (iso) => iso ? iso.slice(0, 10).split('-').reverse().join('/') : '-';
+  const quando = (iso) => iso ? new Date(iso).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : 'nunca';
+  Chart.defaults.color = '#97a89d'; Chart.defaults.borderColor = '#2a3830';
+  const ETAPA = { novo: 'Novo', contato: 'Contato feito', reuniao: 'Reunião', piloto: 'Piloto', proposta: 'Proposta', cliente: 'Cliente', perdido: 'Perdido' };
+  const TIPO = { armazem: 'Armazém', revenda: 'Revenda', trading: 'Trading', cooperativa: 'Cooperativa', banco: 'Banco', consultoria: 'Consultoria', agroindustria: 'Agroindústria', outro: 'Outro', produtor: 'Produtor' };
+  const INTERESSE = { consulta: 'Consulta grátis', relatorio: 'Relatório do município', boletim: 'Boletim semanal' };
+  let prospects = [], planos = {}, situacoes = {}, graficos = [];
+
+  async function api(url, opcoes = {}) {
+    const r = await fetch(url, { ...opcoes, headers: opcoes.body instanceof FormData ? {} : { 'Content-Type': 'application/json' } });
+    if (r.status === 401) { location.href = '/entrar.html?volta=/admin.html'; throw new Error('sessão expirada'); }
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(typeof d.detail === 'string' ? d.detail : `Erro ${r.status}`);
+    return d;
+  }
+  document.querySelectorAll('[data-fechar]').forEach((b) => b.addEventListener('click', () => b.closest('dialog').close()));
+  $('#btn-copiar').addEventListener('click', () => navigator.clipboard.writeText($('#senha-valor').textContent));
+  function mostrarSenha(email, senha) {
+    $('#senha-para').textContent = `Usuário: ${email}`; $('#senha-valor').textContent = senha;
+    $('#url-acesso').textContent = location.origin + '/entrar.html'; $('#dlg-senha').showModal();
+  }
+  function formDados(form) {
+    const d = {};
+    new FormData(form).forEach((v, k) => { d[k] = v === '' ? null : v; });
+    return d;
+  }
+
+  // ---------- abas ----------
+  function abrirAba(id) {
+    document.querySelectorAll('[data-aba]').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.aba === id)));
+    document.querySelectorAll('[data-painel]').forEach((p) => { p.hidden = p.dataset.painel !== id; });
+    ({ visao: carregarVisao, crm: carregarCRM, clientes: carregarClientes, leads: carregarLeads })[id]();
+    history.replaceState(null, '', '#' + id);
+  }
+  document.querySelectorAll('[data-aba]').forEach((b) => b.addEventListener('click', () => abrirAba(b.dataset.aba)));
+
+  // ---------- visão geral ----------
+  async function carregarVisao() {
+    const d = await api('/api/admin/resumo');
+    $('#ind').innerHTML = [
+      ['ok', reais(d.mrr), 'receita mensal (MRR)'], ['', fmtN(d.clientes_ativos), 'clientes ativos'],
+      ['', fmtN(d.em_teste), 'em teste (piloto)'], [d.vencendo_7d ? 'warn' : '', fmtN(d.vencendo_7d), 'vencem em 7 dias'],
+      [d.vencidas ? 'bad' : '', fmtN(d.vencidas), 'licenças vencidas'], ['', reais(d.pipeline_valor), 'em negociação (R$/mês)'],
+      [d.tarefas_atrasadas ? 'warn' : '', fmtN(d.tarefas_atrasadas), 'próximos passos vencidos'],
+      ['', fmtN(d.leads_30d), `leads em 30 dias (${d.leads_sem_prospect} fora do CRM)`],
+      ['', fmtN(d.laudos_mes), 'laudos neste mês'], ['', fmtN(d.areas_monitoradas), 'áreas monitoradas'],
+    ].map(([c, n, t]) => `<div class="indicador ${c}"><div class="n">${n}</div><div class="t">${t}</div></div>`).join('');
+    const max = Math.max(1, ...d.funil.map((f) => f.n));
+    $('#funil').innerHTML = d.funil.map((f) => `<div class="linha"><span>${ETAPA[f.etapa]}</span>
+      <div class="barra-f" style="width:${100 * f.n / max}%;${f.etapa === 'perdido' ? 'background:var(--bad)' : ''}"></div>
+      <span>${f.n} · ${reais(f.valor)}</span></div>`).join('');
+    graficos.forEach((g) => g.destroy()); graficos = [];
+    graficos.push(new Chart($('#g-laudos'), { type: 'bar', data: { labels: d.laudos_por_mes.map((m) => m.mes.split('-').reverse().join('/')),
+      datasets: [{ data: d.laudos_por_mes.map((m) => m.n), backgroundColor: '#4cc38a', borderRadius: 3 }] },
+      options: { maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { precision: 0 } } } } }));
+    const semanas = [...new Set(d.leads_por_semana.map((l) => l.semana))];
+    graficos.push(new Chart($('#g-leads'), { type: 'bar', data: { labels: semanas.map(dataBR),
+      datasets: Object.keys(INTERESSE).map((i, k) => ({ label: INTERESSE[i], stack: 'a', borderRadius: 3,
+        backgroundColor: ['#4cc38a', '#5aa9e6', '#f5a524'][k],
+        data: semanas.map((s) => (d.leads_por_semana.find((l) => l.semana === s && l.interesse === i) || {}).n || 0) })) },
+      options: { maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } },
+        scales: { x: { stacked: true }, y: { stacked: true, beginAtZero: true, ticks: { precision: 0 } } } } }));
+  }
+
+  // ---------- CRM ----------
+  async function carregarCRM() {
+    const d = await api('/api/admin/prospects');
+    prospects = d.prospects;
+    if ($('#sel-etapa').options.length === 0) {
+      $('#sel-etapa').innerHTML = d.etapas.map((e) => `<option value="${e}">${ETAPA[e]}</option>`).join('');
+      $('#sel-tipo').innerHTML = '<option value="">-</option>' + d.tipos.map((t) => `<option value="${t}">${TIPO[t]}</option>`).join('');
+      $('#filtro-tipo').innerHTML += d.tipos.map((t) => `<option value="${t}">${TIPO[t]}</option>`).join('');
+    }
+    desenharQuadro();
+  }
+  function desenharQuadro() {
+    const t = $('#busca-crm').value.trim().toLowerCase(), tipo = $('#filtro-tipo').value;
+    const hoje = new Date().toISOString().slice(0, 10);
+    const lista = prospects.filter((p) => (!tipo || p.tipo === tipo) &&
+      (!t || [p.nome, p.municipio, p.contato_nome, p.email].some((v) => (v || '').toLowerCase().includes(t))));
+    $('#quadro').innerHTML = Object.keys(ETAPA).map((e) => {
+      const cards = lista.filter((p) => p.etapa === e);
+      const soma = cards.reduce((s, p) => s + (p.valor_estimado || 0), 0);
+      return `<div class="coluna"><h3><span>${ETAPA[e]} (${cards.length})</span><span>${soma ? reais(soma) : ''}</span></h3>` +
+        cards.map((p) => `<button class="card" data-prospect="${p.id}" type="button"><b>${esc(p.nome)}</b>
+          <small>${esc(TIPO[p.tipo] || '')}${p.municipio ? ' · ' + esc(p.municipio) : ''}</small>
+          ${p.valor_estimado ? `<small>${reais(p.valor_estimado)}/mês</small>` : ''}
+          ${p.proximo_passo ? `<small class="${p.proximo_em && p.proximo_em <= hoje ? 'atrasado' : ''}">→ ${esc(p.proximo_passo)}${p.proximo_em ? ' · ' + dataBR(p.proximo_em) : ''}</small>` : ''}
+          ${p.leads ? `<small>${p.leads} contato(s) pelo site</small>` : ''}</button>`).join('') + '</div>';
+    }).join('');
+  }
+  $('#busca-crm').addEventListener('input', desenharQuadro);
+  $('#filtro-tipo').addEventListener('change', desenharQuadro);
+  $('#quadro').addEventListener('click', (e) => { const c = e.target.closest('[data-prospect]'); if (c) abrirProspect(Number(c.dataset.prospect)); });
+
+  let prospectAtual = null;
+  async function abrirProspect(id) {
+    prospectAtual = id ? prospects.find((p) => p.id === id) : null;
+    const f = $('#form-prospect'); f.reset();
+    $('#titulo-prospect').textContent = prospectAtual ? prospectAtual.nome : 'Novo possível cliente';
+    if (prospectAtual) for (const el of f.elements) if (el.name && prospectAtual[el.name] != null) el.value = String(prospectAtual[el.name]).slice(0, el.type === 'date' ? 10 : undefined);
+    $('#bloco-historico').hidden = !prospectAtual;
+    $('#btn-excluir-prospect').hidden = !prospectAtual;
+    $('#btn-criar-conta').hidden = !prospectAtual || !!prospectAtual.empresa_id;
+    $('#erro-prospect').hidden = true;
+    if (prospectAtual) carregarHistorico();
+    $('#dlg-prospect').showModal();
+  }
+  async function carregarHistorico() {
+    const h = await api(`/api/admin/prospects/${prospectAtual.id}/interacoes`);
+    $('#historico').innerHTML = h.map((i) => `<div><small>${quando(i.em)} · ${esc(i.tipo)}${i.usuario ? ' · ' + esc(i.usuario) : ''}</small><br>${esc(i.texto)}</div>`).join('') || '<p class="aviso">Sem registros.</p>';
+  }
+  $('#btn-novo-prospect').addEventListener('click', () => abrirProspect(null));
+  $('#form-prospect').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const d = formDados(e.target);
+    if (d.valor_estimado != null) d.valor_estimado = Number(d.valor_estimado);
+    try {
+      if (prospectAtual) await api(`/api/admin/prospects/${prospectAtual.id}`, { method: 'PATCH', body: JSON.stringify(d) });
+      else await api('/api/admin/prospects', { method: 'POST', body: JSON.stringify(d) });
+      $('#dlg-prospect').close(); carregarCRM();
+    } catch (err) { $('#erro-prospect').textContent = err.message; $('#erro-prospect').hidden = false; }
+  });
+  $('#btn-interacao').addEventListener('click', async () => {
+    const texto = $('#texto-interacao').value.trim();
+    if (!texto) return;
+    await api(`/api/admin/prospects/${prospectAtual.id}/interacoes`, { method: 'POST', body: JSON.stringify({ tipo: $('#tipo-interacao').value, texto }) });
+    $('#texto-interacao').value = ''; carregarHistorico();
+  });
+  $('#btn-excluir-prospect').addEventListener('click', async () => {
+    if (!confirm(`Excluir "${prospectAtual.nome}" e todo o histórico?`)) return;
+    await api(`/api/admin/prospects/${prospectAtual.id}`, { method: 'DELETE' });
+    $('#dlg-prospect').close(); carregarCRM();
+  });
+  $('#btn-criar-conta').addEventListener('click', () => {
+    const p = prospectAtual; $('#dlg-prospect').close();
+    abrirNovaEmpresa({ nome: p.nome, cnpj: p.cnpj, admin_nome: p.contato_nome, admin_email: p.email, prospect_id: p.id, plano: 'piloto' });
+  });
+  $('#btn-importar-prospects').addEventListener('click', () => $('#arq-prospects').click());
+  $('#arq-prospects').addEventListener('change', async (e) => {
+    const f = e.target.files[0]; e.target.value = '';
+    if (!f) return;
+    const fd = new FormData(); fd.append('arquivo', f);
+    try { const r = await api('/api/admin/prospects/importar', { method: 'POST', body: fd });
+      alert(`${r.importados} importado(s), ${r.repetidos} já existiam.`); carregarCRM();
+    } catch (err) { alert(err.message); }
+  });
+
+  // ---------- clientes e licenças ----------
+  async function carregarClientes() {
+    const d = await api('/api/admin/empresas');
+    planos = d.planos; situacoes = d.situacoes;
+    const opcoesPlano = Object.entries(planos).map(([k, p]) => `<option value="${k}">${esc(p.nome)}</option>`).join('');
+    $('#sel-plano').innerHTML = opcoesPlano;
+    $('#sel-plano-nova').innerHTML = Object.entries(planos).filter(([k]) => k !== 'interno').map(([k, p]) => `<option value="${k}">${esc(p.nome)}</option>`).join('');
+    $('#sel-situacao').innerHTML = Object.entries(situacoes).map(([k, s]) => `<option value="${k}">${s}</option>`).join('');
+    const uso = (n, lim) => `<span class="uso ${lim != null && n >= lim ? 'cheio' : ''}">${n}${lim != null ? ' / ' + lim : ''}</span>`;
+    const hoje = new Date().toISOString().slice(0, 10);
+    $('#empresas').innerHTML = d.empresas.map((e) => `<tr>
+      <td><b>${esc(e.nome)}</b>${e.operadora ? ' <small style="display:inline">(GeoLEM)</small>' : ''}<small>${esc(e.cnpj || '')}${e.municipio ? ' · ' + esc(e.municipio) : ''}</small></td>
+      <td>${esc((planos[e.plano] || {}).nome || e.plano)}</td>
+      <td><span class="selo situacao-${e.situacao}">${situacoes[e.situacao] || e.situacao}</span></td>
+      <td class="${e.valido_ate && e.valido_ate < hoje ? 'uso cheio' : ''}">${e.valido_ate ? dataBR(e.valido_ate) : 'sem vencimento'}</td>
+      <td>${uso(e.areas, e.limite_areas)}</td><td>${uso(e.usuarios, e.limite_usuarios)}</td>
+      <td>${uso(e.laudos_avulsos_mes, e.limite_laudos_mes)} <small>${e.laudos_mes} no total</small></td>
+      <td class="num">${e.valor_mensal ? reais(e.valor_mensal) : '-'}</td><td>${quando(e.ultimo_acesso)}</td>
+      <td><button class="btn btn-peq" data-empresa="${e.id}" type="button">Gerenciar</button></td></tr>`).join('');
+    window._empresas = d.empresas;
+  }
+  $('#empresas').addEventListener('click', (e) => { const b = e.target.closest('[data-empresa]'); if (b) abrirLicenca(Number(b.dataset.empresa)); });
+  let empresaAtual = null;
+  async function abrirLicenca(id) {
+    empresaAtual = window._empresas.find((e) => e.id === id);
+    const f = $('#form-licenca'); f.reset();
+    for (const el of f.elements) if (el.name) el.value = empresaAtual[el.name] == null ? '' : String(empresaAtual[el.name]).slice(0, el.type === 'date' ? 10 : undefined);
+    $('#titulo-licenca').textContent = `Licença · ${empresaAtual.nome}`;
+    $('#erro-licenca').hidden = true;
+    const us = await api(`/api/admin/empresas/${id}/usuarios`);
+    $('#usuarios-empresa').innerHTML = us.map((u) => `<tr><td><b>${esc(u.nome)}</b><small>${esc(u.email)}</small></td>
+      <td>${u.papel === 'admin' ? 'Administrador' : 'Analista'}${u.ativo ? '' : ' · desativado'}</td><td>${u.trocar_senha ? 'aguardando 1º acesso' : 'último acesso: ' + quando(u.ultimo_acesso)}</td>
+      <td><button class="btn btn-peq" data-senha="${u.id}" data-email="${esc(u.email)}" type="button">Redefinir senha</button></td></tr>`).join('') || '<tr><td class="vazio">Sem usuários.</td></tr>';
+    $('#dlg-licenca').showModal();
+  }
+  $('#usuarios-empresa').addEventListener('click', async (e) => {
+    const b = e.target.closest('[data-senha]');
+    if (!b || !confirm(`Gerar nova senha provisória para ${b.dataset.email}?`)) return;
+    const r = await api(`/api/admin/usuarios/${b.dataset.senha}/redefinir-senha`, { method: 'POST' });
+    mostrarSenha(b.dataset.email, r.senha_provisoria);
+  });
+  $('#form-licenca').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const d = formDados(e.target);
+    const corpo = { ...d };
+    ['limite_areas', 'limite_usuarios', 'limite_laudos_mes'].forEach((k) => { corpo[k] = d[k] == null ? null : Number(d[k]); });
+    corpo.valor_mensal = d.valor_mensal == null ? null : Number(d.valor_mensal);
+    if (d.plano !== empresaAtual.plano) {
+      corpo.aplicar_limites_do_plano = true;
+      ['limite_areas', 'limite_usuarios', 'limite_laudos_mes'].forEach((k) => { if (String(empresaAtual[k] ?? '') === String(d[k] ?? '')) delete corpo[k]; });
+    }
+    if (!d.valido_ate) { delete corpo.valido_ate; corpo.sem_validade = true; }
+    if (['limite_areas', 'limite_usuarios', 'limite_laudos_mes'].every((k) => corpo[k] === null)) {
+      ['limite_areas', 'limite_usuarios', 'limite_laudos_mes'].forEach((k) => delete corpo[k]); corpo.sem_limites = true; }
+    else ['limite_areas', 'limite_usuarios', 'limite_laudos_mes'].forEach((k) => { if (corpo[k] === null) delete corpo[k]; });
+    if ((d.situacao === 'suspensa' || d.situacao === 'cancelada') && d.situacao !== empresaAtual.situacao &&
+        !confirm(`Marcar "${empresaAtual.nome}" como ${situacoes[d.situacao].toLowerCase()}? Os usuários perdem o acesso na hora.`)) return;
+    try { await api(`/api/admin/empresas/${empresaAtual.id}`, { method: 'PATCH', body: JSON.stringify(corpo) });
+      $('#dlg-licenca').close(); carregarClientes();
+    } catch (err) { $('#erro-licenca').textContent = err.message; $('#erro-licenca').hidden = false; }
+  });
+
+  async function abrirNovaEmpresa(pre = {}) {
+    if (!Object.keys(planos).length) { const d = await api('/api/admin/empresas'); planos = d.planos; situacoes = d.situacoes;
+      $('#sel-plano-nova').innerHTML = Object.entries(planos).filter(([k]) => k !== 'interno').map(([k, p]) => `<option value="${k}">${esc(p.nome)}</option>`).join(''); }
+    const f = $('#form-empresa'); f.reset();
+    for (const el of f.elements) if (el.name && pre[el.name] != null) el.value = pre[el.name];
+    $('#erro-empresa').hidden = true; $('#dlg-empresa').showModal();
+  }
+  $('#btn-nova-empresa').addEventListener('click', () => abrirNovaEmpresa());
+  $('#form-empresa').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const d = formDados(e.target);
+    if (d.prospect_id) d.prospect_id = Number(d.prospect_id);
+    try { const r = await api('/api/admin/empresas', { method: 'POST', body: JSON.stringify(d) });
+      $('#dlg-empresa').close(); mostrarSenha(d.admin_email, r.senha_provisoria);
+      if (!$('[data-painel="clientes"]').hidden) carregarClientes(); else carregarCRM();
+    } catch (err) { $('#erro-empresa').textContent = err.message; $('#erro-empresa').hidden = false; }
+  });
+
+  // ---------- leads ----------
+  async function carregarLeads() {
+    const lista = await api('/api/admin/leads');
+    $('#leads').innerHTML = lista.map((l) => {
+      const det = l.detalhe || {};
+      const detalhe = l.interesse === 'consulta' ? `${esc(det.imovel || det.codigo || '')}${det.resultado ? ` · <span class="selo ${det.resultado}">${{ ok: 'Conforme', warn: 'Atenção', bad: 'Não conforme' }[det.resultado]}</span>` : ''}`
+        : esc(det.municipio || l.municipio || '');
+      return `<tr><td>${quando(l.criado_em)}</td><td><b>${esc(l.nome)}</b><small>${esc(l.email)}${l.telefone ? ' · ' + esc(l.telefone) : ''}</small></td>
+        <td>${esc(l.empresa || '-')}<small>${esc(TIPO[l.perfil] || '')}</small></td>
+        <td>${INTERESSE[l.interesse] || esc(l.interesse)}${l.boletim ? '<small>assina o boletim</small>' : ''}</td><td>${detalhe}</td>
+        <td>${l.prospect_id ? `<span class="selo ok">${ETAPA[l.prospect_etapa] || 'no CRM'}</span>` : `<button class="btn btn-peq" data-lead="${l.id}" type="button">Levar ao CRM</button>`}</td>
+        <td><button class="btn btn-peq btn-perigo" data-excluir="${l.id}" data-email="${esc(l.email)}" type="button" title="Exclusão a pedido do titular (LGPD)">Excluir</button></td></tr>`;
+    }).join('') || '<tr><td colspan="7" class="vazio">Nenhum lead ainda. Divulgue o observatório.</td></tr>';
+  }
+  $('#leads').addEventListener('click', async (e) => {
+    const lv = e.target.closest('[data-lead]'), ex = e.target.closest('[data-excluir]');
+    try {
+      if (lv) { await api(`/api/admin/leads/${lv.dataset.lead}/prospect`, { method: 'POST' }); carregarLeads(); }
+      if (ex && confirm(`Excluir todos os registros de ${ex.dataset.email}? Não dá para desfazer.`)) {
+        await api(`/api/admin/leads/${ex.dataset.excluir}`, { method: 'DELETE' }); carregarLeads(); }
+    } catch (err) { alert(err.message); }
+  });
+
+  const abaInicial = (location.hash || '').slice(1);
+  abrirAba(['visao', 'crm', 'clientes', 'leads'].includes(abaInicial) ? abaInicial : 'visao');
+</script>
+</body>
+</html>

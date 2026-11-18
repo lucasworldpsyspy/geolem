@@ -50,6 +50,7 @@
       <p id="erro" class="erro" role="alert" hidden></p>
       <button class="btn btn-primario" type="submit">Entrar</button>
       <p class="aviso">Esqueceu a senha? Peça ao administrador da sua empresa para redefinir.</p>
+      <p class="aviso">Ainda não é cliente? Veja o <a href="/observatorio.html">Observatório do Oeste Baiano</a> e consulte uma área grátis.</p>
     </form>
 
     <form id="form-trocar" novalidate hidden>
@@ -73,7 +74,7 @@
   const $ = (s) => document.querySelector(s);
   const params = new URLSearchParams(location.search);
   // Só aceita voltar para uma página interna (evita redirecionamento para outro site)
-  const volta = /^\/[a-z0-9._/-]*$/i.test(params.get('volta') || '') ? params.get('volta') : '/';
+  const volta = /^\/[a-z0-9._/-]*$/i.test(params.get('volta') || '') ? params.get('volta') : '/painel.html';
   let senhaDigitada = '';
 
   function mostrar(el, msg) { el.textContent = msg; el.hidden = !msg; }
@@ -86,6 +87,7 @@
   function pedirTroca() { $('#form-entrar').hidden = true; $('#form-trocar').hidden = false; $('#atual').value = senhaDigitada; ($('#atual').value ? $('#nova') : $('#atual')).focus(); }
 
   if (params.get('trocar')) pedirTroca();
+  if (params.get('bloqueado')) mostrar($('#erro'), 'O acesso da sua empresa está suspenso ou a licença venceu. Fale com a GeoLEM.');
 
   $('#form-entrar').addEventListener('submit', async (e) => {
     e.preventDefault();

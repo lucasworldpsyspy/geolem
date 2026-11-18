@@ -275,3 +275,86 @@ CREATE TABLE IF NOT EXISTS geo.alertas_desmatamento (
 );
 CREATE INDEX IF NOT EXISTS alertas_desm_geom_idx ON geo.alertas_desmatamento USING gist (geom);
 CREATE INDEX IF NOT EXISTS alertas_desm_fonte_idx ON geo.alertas_desmatamento (fonte);
+
+-- =====================================================================
+-- Gestão do negócio: licenças, CRM de possíveis clientes e leads do site
+-- =====================================================================
+-- Licença de cada empresa cliente
+ALTER TABLE app.empresas ADD COLUMN IF NOT EXISTS plano text NOT NULL DEFAULT 'piloto',
+                         ADD COLUMN IF NOT EXISTS situacao text NOT NULL DEFAULT 'teste',  -- teste | ativa | suspensa | cancelada
+                         ADD COLUMN IF NOT EXISTS valido_ate date,
+                         ADD COLUMN IF NOT EXISTS limite_areas integer,         -- nulo = sem limite
+                         ADD COLUMN IF NOT EXISTS limite_usuarios integer,
+                         ADD COLUMN IF NOT EXISTS limite_laudos_mes integer,    -- laudos avulsos (fora da carteira)
+                         ADD COLUMN IF NOT EXISTS valor_mensal numeric(12, 2),
+                         ADD COLUMN IF NOT EXISTS responsavel text,
+                         ADD COLUMN IF NOT EXISTS email_contato text,
+                         ADD COLUMN IF NOT EXISTS telefone text,
+                         ADD COLUMN IF NOT EXISTS municipio text,
+                         ADD COLUMN IF NOT EXISTS observacoes text,
+                         ADD COLUMN IF NOT EXISTS operadora boolean NOT NULL DEFAULT false;  -- a própria GeoLEM
+
+-- Administração da plataforma (você): vê todas as empresas, o CRM e os leads
+ALTER TABLE app.usuarios ADD COLUMN IF NOT EXISTS superadmin boolean NOT NULL DEFAULT false;
+
+-- CRM: possíveis clientes (empresas, não pessoas físicas)
+CREATE TABLE IF NOT EXISTS app.prospects (
+  id              serial PRIMARY KEY,
+  nome            text NOT NULL,
+  cnpj            text,
+  tipo            text,       -- armazem | revenda | trading | cooperativa | banco | consultoria | agroindustria | outro
+  municipio       text,
+  uf              text,
+  contato_nome    text,
+  contato_cargo   text,
+  email           text,
+  telefone        text,
+  origem          text NOT NULL DEFAULT 'manual',  -- manual | planilha | site | indicacao | evento
+  etapa           text NOT NULL DEFAULT 'novo',    -- novo | contato | reuniao | piloto | proposta | cliente | perdido
+  valor_estimado  numeric(12, 2),
+  proximo_passo   text,
+  proximo_em      date,
+  motivo_perda    text,
+  notas           text,
+  empresa_id      integer REFERENCES app.empresas(id),  -- quando vira cliente
+  criado_em       timestamptz NOT NULL DEFAULT now(),
+  atualizado_em   timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS prospects_etapa_idx ON app.prospects (etapa);
+
+-- Histórico de contatos com cada prospect
+CREATE TABLE IF NOT EXISTS app.interacoes (
+  id           bigserial PRIMARY KEY,
+  prospect_id  integer NOT NULL REFERENCES app.prospects(id) ON DELETE CASCADE,
+  em           timestamptz NOT NULL DEFAULT now(),
+  tipo         text NOT NULL DEFAULT 'nota',  -- nota | ligacao | email | whatsapp | reuniao | etapa
+  texto        text NOT NULL,
+  usuario_id   integer
+);
+CREATE INDEX IF NOT EXISTS interacoes_prospect_idx ON app.interacoes (prospect_id, em DESC);
+
+-- Leads do site público (observatório), com o consentimento registrado (LGPD)
+CREATE TABLE IF NOT EXISTS app.leads (
+  id                 bigserial PRIMARY KEY,
+  criado_em          timestamptz NOT NULL DEFAULT now(),
+  nome               text NOT NULL,
+  email              text NOT NULL,
+  telefone           text,
+  empresa            text,
+  perfil             text,       -- mesmo vocabulário de app.prospects.tipo, ou produtor
+  municipio          text,
+  interesse          text NOT NULL,  -- consulta | relatorio | boletim
+  detalhe            jsonb,          -- o que consultou (código, resultado), município do relatório etc.
+  consentimento_em   timestamptz NOT NULL,
+  consentimento_txt  text NOT NULL,
+  ip                 text,
+  boletim            boolean NOT NULL DEFAULT false,
+  boletim_municipio  text,
+  token_saida        text,           -- link de descadastro do boletim
+  prospect_id        integer REFERENCES app.prospects(id)
+);
+CREATE INDEX IF NOT EXISTS leads_email_idx ON app.leads (lower(email));
+
+-- Município do alerta (o DETER informa), para o boletim semanal e o observatório
+ALTER TABLE geo.alertas_desmatamento ADD COLUMN IF NOT EXISTS municipio text,
+                                     ADD COLUMN IF NOT EXISTS uf text;
