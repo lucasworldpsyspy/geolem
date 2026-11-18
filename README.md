@@ -52,6 +52,11 @@ geolem/
 
 ## Bases públicas
 
+Além das camadas abaixo: limites municipais do IBGE (`municipios_ibge`) e a Produção Agrícola Municipal do IBGE
+(`pam_ibge`, API SIDRA, tabela 5457: valor, quantidade, área colhida e rendimento por cultura e município). O
+observatório cruza tudo por município na malha oficial. A PAM de 2025 soma R$ 22,2 bilhões nos 16 municípios
+da região (soja R$ 14,1 bi, algodão R$ 6,1 bi).
+
 | Fonte (`python -m ingest <id>`) | Origem | Uso |
 |---|---|---|
 | `prodes_cerrado` | INPE / TerraBrasilis (WFS) | desmatamento anual, com data da imagem |
@@ -193,6 +198,23 @@ formulário. Grupos agrícolas (empresas) podem ser cadastrados ou importados. P
 de produtores do CRM mostra cada município com imóveis, área, pressão de compliance, cobertura do CRM, leads e
 convites, e uma prioridade para escolher onde fazer campanha.
 
+### Commodities
+Soja, milho, sorgo, algodão (em caroço) e café. Cada área da carteira tem uma cultura (cadastro, coluna `cultura` da
+planilha ou edição na tabela), que define a unidade de preço (saca de 60 kg ou arroba de 15 kg), a produtividade e o
+preço do valor em risco. Por padrão o GeoLEM usa a média oficial da região na Produção Agrícola Municipal do IBGE
+(valor ÷ quantidade e rendimento ponderado, `python -m ingest pam_ibge`); um preço cadastrado no Admin vale por 60
+dias. A elegibilidade RenovaBio entra no valor em risco para milho, sorgo e soja.
+
+### Mercado de lotes de origem verificada (`/mercado.html`)
+Cooperativas, armazéns e grupos produtores anunciam lotes (cultura, safra, volume, preço pedido ou "a combinar",
+entrega) ligados a uma área da própria carteira. Regras: só áreas analisadas há até 90 dias e sem resultado Não
+conforme; volume limitado a 1,5 × a produção estimada da área numa safra; empresas suspensas ou vencidas saem da
+vitrine. Compradores filtram por cultura, município, "só Conformes" e "elegível no RenovaBio", comparam o preço pedido
+com a referência e manifestam interesse. Até o aceite do vendedor, nenhum lado vê o nome do outro; no aceite, os
+contatos são liberados; o vendedor registra o negócio fechado (volume e preço), base da futura taxa de intermediação.
+O GeoLEM não opera pagamento, frete nem classificação. O observatório mostra o volume disponível por cultura e o
+Admin, o volume ofertado e o fechado.
+
 ### Carteira e monitoramento
 - **Importar em lote** pela página Carteira: planilha CSV/Excel com o código SIGEF ou CAR (colunas `codigo`, `nome`,
   `fornecedor`, `codigo_erp`, `reserva_legal_ha`), ou arquivo geográfico em que cada polígono vira uma área. Linhas com
@@ -286,6 +308,14 @@ scp "root@IP_DO_SERVIDOR:/opt/geolem/backups/*.sql.gz" .
 Para restaurar num banco vazio:
 `gunzip -c ARQUIVO.sql.gz | docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T db psql -U geolem -d geolem`.
 
+## Observatório público (`/observatorio.html`)
+Números da região, sem identificar imóveis nem pessoas: valor da produção agrícola (IBGE/PAM), hectares desmatados
+depois do corte do EUDR e o valor anual estimado da produção nessas áreas (rendimento de soja do município × preço
+médio regional), mapa coroplético dos municípios com cinco indicadores, gráficos por cultura e por município,
+desmatamento por ano, alertas DETER por mês e a vitrine do mercado. O cálculo (cerca de 20 s) roda ao subir a API e a
+cada 6 horas em segundo plano; a página sempre abre na hora. Municípios só em parte dentro da região monitorada
+aparecem com o percentual coberto.
+
 ## API
 
 | Método | Rota | Para quê |
@@ -314,6 +344,12 @@ Para restaurar num banco vazio:
 | GET/POST | `/api/publico/convite/{token}` | página do convite e aceite do produtor |
 | GET/PUT | `/api/admin/referencias` | preços e produtividade de referência |
 | GET | `/api/admin/produtores/municipios` | planejamento de produtores por município |
+| GET/POST/PATCH | `/api/mercado/lotes` | lotes disponíveis (filtros), anunciar, alterar situação |
+| POST | `/api/mercado/lotes/{id}/interesse` | manifestar interesse num lote |
+| GET | `/api/mercado/meus` | meus lotes, interesses recebidos e enviados |
+| POST | `/api/mercado/interesses/{id}/responder` | aceitar, recusar ou registrar negócio fechado |
+| PATCH | `/api/carteira/areas/{id}` | alterar cultura, fornecedor ou código no ERP |
+| GET | `/api/publico/observatorio/mapa.geojson` · `/api/publico/mercado/resumo` | mapa e vitrine públicos |
 | GET | `/verificar/{protocolo}` | página pública de verificação (destino do QR code) |
 | POST | `/api/arquivos/geometria` | converte KML/KMZ/SHP/GeoJSON/GPKG em GeoJSON |
 | GET | `/api/tiles/{camada}/{z}/{x}/{y}.pbf` | vector tiles para o mapa |

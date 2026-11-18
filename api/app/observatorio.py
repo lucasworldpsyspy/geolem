@@ -214,11 +214,33 @@ def aquecer(pool) -> None:
     threading.Thread(target=tarefa, daemon=True).start()
 
 
+def _recalcular_em_segundo_plano() -> None:
+    from .db import pool
+
+    def tarefa():
+        try:
+            with pool.connection() as conn:
+                novo = _calcular(conn)
+            with _trava:
+                _cache["dados"], _cache["em"] = novo, time.monotonic()
+        except Exception as e:
+            print(f"Observatório: recálculo falhou ({e})", flush=True)
+        finally:
+            _cache["recalculando"] = False
+
+    _cache["recalculando"] = True
+    threading.Thread(target=tarefa, daemon=True).start()
+
+
 def dados(conn, forcar: bool = False) -> dict:
+    """Números do observatório. Vencido o cache, entrega a versão anterior e recalcula em segundo plano."""
     with _trava:
-        if forcar or not _cache["dados"] or time.monotonic() - _cache["em"] > CACHE_SEGUNDOS:
+        vencido = time.monotonic() - _cache["em"] > CACHE_SEGUNDOS
+        if forcar or not _cache["dados"]:
             _cache["dados"] = _calcular(conn)
             _cache["em"] = time.monotonic()
+        elif vencido and not _cache.get("recalculando"):
+            _recalcular_em_segundo_plano()
         return _cache["dados"]
 
 

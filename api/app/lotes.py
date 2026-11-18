@@ -89,6 +89,8 @@ def listar(conn, empresa_id: int, cultura: str | None = None, municipio: str | N
     linhas = conn.execute(
         f"""{SQL_LOTE} WHERE l.situacao IN ('ativo', 'negociando') AND a.ativa
               AND (l.disponivel_ate IS NULL OR l.disponivel_ate >= current_date)
+              AND e.ativa AND (e.operadora OR (e.situacao IN ('teste', 'ativa')
+                               AND (e.valido_ate IS NULL OR e.valido_ate >= current_date)))
               AND a.ultimo_status <> 'bad'
               AND (%(c)s::text IS NULL OR l.cultura = %(c)s)
               AND (%(m)s::text IS NULL OR unaccent(a.municipio) ILIKE unaccent(%(mp)s))
@@ -198,9 +200,11 @@ def resumo_publico(conn) -> dict:
     refs = mercado.referencias(conn)
     linhas = conn.execute(
         """SELECT l.cultura, count(*) AS lotes, sum(l.volume_t) AS volume_t
-           FROM app.lotes l JOIN app.areas a ON a.id = l.area_id
+           FROM app.lotes l JOIN app.areas a ON a.id = l.area_id JOIN app.empresas e ON e.id = l.empresa_id
            WHERE l.situacao IN ('ativo', 'negociando') AND a.ativa AND a.ultimo_status <> 'bad'
              AND (l.disponivel_ate IS NULL OR l.disponivel_ate >= current_date)
+             AND e.ativa AND (e.operadora OR (e.situacao IN ('teste', 'ativa')
+                              AND (e.valido_ate IS NULL OR e.valido_ate >= current_date)))
            GROUP BY l.cultura ORDER BY sum(l.volume_t) DESC""").fetchall()
     return {"culturas": [{"cultura": refs.get(l["cultura"], {}).get("rotulo", l["cultura"]), "lotes": l["lotes"],
                           "volume_t": float(l["volume_t"])} for l in linhas],
